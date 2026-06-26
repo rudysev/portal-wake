@@ -1,0 +1,15 @@
+[versions]
+agp = "9.2.1"
+coreKtx = "1.13.1"
+vosk = "0.3.75"
+junit = "4.13.2"
+json = "20240303"
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+vosk-android = { group = "com.alphacephei", name = "vosk-android", version.ref = "vosk" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+json = { group = "org.json", name = "json", version.ref = "json" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }

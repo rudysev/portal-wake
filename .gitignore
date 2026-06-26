@@ -1,0 +1,49 @@
+*.iml
+.gradle
+.kotlin
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+
+# Local environment / secrets — never commit. (None exist in this project today; this
+# is a guard so a future .env or local config file can't be added by accident.)
+.env
+.env.*
+!.env.example
+config.local.json
+*.local.json
+
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Provisioner runtime artifacts: the downloaded APK and the auto-fetched adb tools.
+provisioning/apks/*.apk
+provisioning/platform-tools/
+provisioning/platform-tools.zip
+_chk*.png
+
+# Internal strategy/planning notes — never publish.
+_planning/
+
+# Reverse-engineering research — never publish (repo is public). Decompilation
+# working dir, APKs pulled off the device, and internal findings docs.
+apk_work/
+system_services.apk
+*.apk
+docs/*
+# …except published README assets.
+!docs/img/
+
+build/
+# Downloaded speech model (not committed); keep the folder's README.
+/app/src/main/assets/model-en-us/*
+!/app/src/main/assets/model-en-us/README.md
+.cursorrules
