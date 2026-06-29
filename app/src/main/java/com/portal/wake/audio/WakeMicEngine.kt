@@ -17,9 +17,10 @@ import com.portal.wake.system.MicLiberator
  * first frame after a resume isn't garbled.
  *
  * **Mic-slot handoff & phone calls are NOT handled here** anymore — `WakeService` drives [pause]/[start]
- * for both handoff and call stand-down via its capture gate. [pause] yields the slot (the session's bounded
- * stop unblocks a parked read and joins), [start] reacquires it; [MicLiberator] best-effort frees the slot
- * from the Portal's own wake app on acquire.
+ * for both handoff and call stand-down via its capture gate. [pause] yields the slot: the session's reads
+ * are non-blocking, so its stop deterministically exits the capture thread and releases the mic. [start]
+ * reacquires it; [MicLiberator] best-effort frees the slot from the
+ * Portal's own wake app on acquire.
  *
  * Caller must hold RECORD_AUDIO. If the wake model is missing/unusable, [onUnavailable] fires.
  */
@@ -71,23 +72,27 @@ class WakeMicEngine(
             log = { DebugLog.log(it) },
             threadName = "wake-capture",
             rebuildAfterReadFailures = REBUILD_AFTER_READ_FAILURES,
+            // Always-listening: recover a stolen/half-dead mic that returns no data (read==0) without ever
+            // erroring — otherwise the <0 rebuild above can't see it and wake goes silently deaf.
+            idleRebuildMs = PcmCaptureSession.DEFAULT_IDLE_REBUILD_MS,
         )
         return built
     }
 
     /**
      * Open the mic and start capturing (idempotent). Frees the Portal wake-word services first so we own the
-     * single mic slot. If the prior capture thread is wedged (the session refuses), recover by discarding it
-     * and starting a fresh session — so a stuck native mic call can no longer leave us permanently deaf.
-     * Returns whether a capture thread is now running. Callbacks are wired in [buildSession].
+     * single mic slot. The session refuses to start only while a prior capture thread is still alive —
+     * which can happen only if a native open/stop/release hung. Recover by discarding it and starting a fresh
+     * session, so a stuck native mic call can't leave us permanently deaf. Returns whether a capture thread is now running.
+     * Callbacks are wired in [buildSession].
      */
     fun start(): Boolean {
         MicLiberator.freeMic(context)
         if (session.start()) return true
-        // Refused → the previous capture thread is wedged in a native call that never unblocked (stop()'s
-        // bounded join timed out). Discard it and start fresh on a new device/thread. The wedged thread sees
-        // running=false so it delivers no further frame, and its eventual onStopped is dropped by the
-        // current-session gate (in buildSession), so it can't disturb the fresh capture.
+        // Refused → a previous capture thread is still alive: a native open/stop/release hung past the stop
+        // join. Discard it and start fresh on a new device/thread. The stale thread sees running=false so it
+        // delivers no further frame, and its eventual onStopped is dropped by the current-session gate (in
+        // buildSession), so it can't disturb the fresh capture.
         DebugLog.log("wake capture wedged — rebuilding session and retrying")
         session = buildSession()
         return session.start()
@@ -103,7 +108,7 @@ class WakeMicEngine(
         pendingWakeWords = words
     }
 
-    /** Release the mic so a consumer (or a call) can take the slot. The session's stop is bounded + frees the slot. */
+    /** Release the mic so a consumer (or a call) can take the slot. Non-blocking reads make the session's stop deterministic: the capture thread exits promptly and the mic is freed. */
     fun pause() {
         session.stop()
         DebugLog.log("mic paused (yielded slot)")
