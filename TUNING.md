@@ -1,7 +1,8 @@
 # Tuning wake-word accuracy
 
-Goal: fire on a real "hey &lt;word&gt;" with **high precision** (few false triggers) while keeping
-**high recall** (rarely miss a genuine one). Two upstream Vosk references drive this:
+Goal: fire on a real wake phrase — its declared lead + keyword, e.g. "hey jarvis" (also "hi bob", or a
+bare "computer" with no lead) — with **high precision** (few false triggers) while keeping **high recall**
+(rarely miss a genuine one). Two upstream Vosk references drive this:
 
 - Accuracy overview: <https://alphacephei.com/vosk/accuracy>
 - Adaptation (LM / acoustic): <https://alphacephei.com/vosk/adaptation>
@@ -12,7 +13,7 @@ These follow Vosk's own top recommendations and need no extra work:
 
 1. **Restricted grammar (the single biggest win).** Vosk's accuracy page stresses that a *fixed
    vocabulary matching the target keywords* is what makes short-phrase spotting reliable. We build a
-   grammar from exactly the wake phrases + their keywords + `"hey"` + an `"[unk]"` escape token, so the
+   grammar from exactly the wake phrases + their keywords + each word's declared lead (e.g. `"hey"`) + an `"[unk]"` escape token, so the
    decoder either hears a wake phrase or dumps everything else into `[unk]` instead of forcing a
    look-alike onto a wake word. → `WakeRecognizer.buildGrammar`.
 2. **A dynamic-graph (`lgraph`) model.** Runtime grammars require "a model with a dynamic graph"
@@ -21,9 +22,10 @@ These follow Vosk's own top recommendations and need no extra work:
    without losing the grammar path. → `app/src/main/assets/model-en-us/README.md`.
 3. **16 kHz mono capture.** Vosk models are 16 kHz; we capture at exactly that with no resampling.
    → `PcmCaptureFormat.SAMPLE_RATE` (= 16_000, in commons).
-4. **A keyword must follow a "hey"-word — and, for hand-off routes, form a clean uncontaminated phrase.**
-   The mandatory "hey" is the first precision gate (a bare keyword, look-alike, or noise-decoded keyword
-   never fires). It is **not sufficient on its own** for a soundalike-prone keyword like *jarvis* —
+4. **A keyword must follow its declared lead word — and, for hand-off routes, form a clean uncontaminated phrase.**
+   The mandatory lead (e.g. "hey", declared in the plugin's phrase) is the first precision gate (a bare
+   keyword, look-alike, or noise-decoded keyword never fires). It is **not sufficient on its own** for a
+   soundalike-prone keyword like *jarvis* —
    background audio can decode a full "hey jarvis" (see the on-device section) — so **strict routes**
    (jarvis/alexa) additionally require a clean phrase (`≤ CLEAN_PHRASE_MAX_WORDS`), the keyword over its
    floor, and **no rival wake keyword** in the decode. `setWords(true)` supplies the per-word confidence
@@ -57,13 +59,13 @@ the clean-phrase and cross-keyword gates — not the keyword floor — do the wo
   phone call held near the Portal decoded `[[unk](100) hey(66) jarvis(95)]` — a *short, clean* phrase that
   the clean-phrase and cross-keyword gates above can't catch (it isn't long, and carries no rival keyword).
   What distinguishes it from a real wake is the **"hey" confidence**: 0.66 here vs **0.96–1.00** for every
-  genuine wake. Fixed by gating the preceding "hey" on `WakeMatcher.HEY_MIN_CONF` (0.80) for strict routes —
+  genuine wake. Fixed by gating the preceding "hey" on `WakeMatcher.LEAD_MIN_CONF` (0.80) for strict routes —
   present-but-weak no longer passes. The call audio reached the mic at all because `CallGate` reads the
   *Portal's* audio mode and so is blind to a call on a *separate phone*; the matcher floor is the backstop.
 
 - **Precision (a third failure mode: a clean phrase contaminated by `[unk]`).** A live false fire decoded
   `[[unk](51) hey(99) jarvis(99)]` — a *short, clean* phrase with **both** wake words maxed at ~0.99, so
-  **no confidence floor could ever catch it** (`HEY_MIN_CONF`, `STRICT_MIN_CONF` all cleared). What marks it
+  **no confidence floor could ever catch it** (`LEAD_MIN_CONF`, `STRICT_MIN_CONF` all cleared). What marks it
   as background audio is the leading **`[unk]`**: non-wake sound captured in the same finalized window. Across
   every record, a genuine close-mic wake decodes as a bare `[hey(95–100) jarvis(97–100)]` with **no `[unk]`**,
   while all three known FPs carried one. Fixed by rejecting **any `[unk]` token** (`WakeMatcher.UNK_TOKEN`) on
@@ -87,8 +89,8 @@ All in `WakeMatcher` / per-`WakeWord`:
   lenient clean-phrase bypass **off** and applies all three gates: floor + clean-phrase + no-rival-keyword.
   On its own the floor is a *weak* guard (the live-stream FP scored 0.83, above any floor we'd keep, while
   real wakes score ~1.00), so the clean-phrase and cross-keyword gates do the heavy lifting — don't reach
-  for the floor to fix a background-audio FP. A plugin sets minConf as the 4th field of its spec
-  (`id;phrase;keyword;minConf`).
+  for the floor to fix a background-audio FP. A plugin sets it via the `com.portal.wake.min_confidence`
+  meta-data on its receiver.
 - **`WakeMatcher.BASELINE_CONF`** (0.50) — at/below this a word is "lenient": a clean short phrase fires
   even at low confidence (recall insurance). With the lgraph model this bypass is **dormant** (real jarvis
   wakes decode at ≥0.92). The built-in routes deliberately sit **above** it (see `STRICT_MIN_CONF`); it
@@ -97,10 +99,11 @@ All in `WakeMatcher` / per-`WakeWord`:
   recall bypass **and** (since the live-stream FP) is a hard requirement for strict hand-off routes — a
   longer decode never fires jarvis/alexa, even over the floor. Lower it to be stricter; raise it to catch
   wakes spoken inside a few filler words, at some precision cost.
-- **`WakeMatcher.HEY_WORDS`** — the accepted "hey" variants. Kept tight: **`hey`/`hay` only**. `a`, `hi`,
-  and `he` were dropped — too-common lead-ins (filler / mis-decodes) that widened false fires. Add a
-  variant back only if the logs show a real wake lost because the prefix was misheard.
-- **`WakeMatcher.HEY_MIN_CONF`** (0.80) — the confidence the preceding "hey" must clear on a **strict**
+- **`WakeMatcher.LEAD_ALIASES`** — accepted recognizer mishearings per declared lead word (e.g. `hey` →
+  **`hey`/`hay` only**). A lead with no entry matches itself only. Kept tight: `a`, `hi`, and `he` were
+  dropped from `hey` — too-common lead-ins (filler / mis-decodes) that widened false fires. Add a variant
+  back only if the logs show a real wake lost because the lead was misheard.
+- **`WakeMatcher.LEAD_MIN_CONF`** (0.80) — the confidence the preceding lead must clear on a **strict**
   route. Real wakes decode "hey" at 0.96–1.00, so this is near-free on recall; it blocks a clean short
   phrase with an under-confident "hey" (observed: 0.66 from phone-call audio over a speaker). Lenient
   routes ignore it (present-only). Raise it toward 0.9 to be stricter on noisy "hey"s; if the logs show a

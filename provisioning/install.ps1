@@ -138,8 +138,19 @@ function Free-MicSlot {
 
 function Start-WakeService {
   Step "Starting portal-wake (it runs in the background - no icon)"
+  # Wait until the recognizer is actually listening before telling the user to speak — the
+  # Vosk model + grammar take a few seconds to load, and a "hey jarvis" said before that can
+  # be missed. The service logs "wake recognizer ready" once it's listening; count existing
+  # lines first so a reinstall (debug.txt persists) waits for a NEW one, not a stale line.
+  $log = "/sdcard/Android/data/$($cfg["PKG"])/files/debug.txt"
+  $base = [int]((A shell "grep -c 'wake recognizer ready' $log 2>/dev/null") -replace '\D','')
   A shell "am broadcast -a $($cfg["START_ACTION"]) -n $($cfg["RECEIVER"]) -f 0x20" | Out-Null
-  Ok "Started"
+  for ($i = 0; $i -lt 30; $i++) {
+    $n = [int]((A shell "grep -c 'wake recognizer ready' $log 2>/dev/null") -replace '\D','')
+    if ($n -gt $base) { Ok "Listening"; return }
+    Start-Sleep -Seconds 1
+  }
+  Warn "Started, but couldn't confirm the listener came up - give it a few seconds before saying ""hey jarvis""."
 }
 
 if ($Status) {

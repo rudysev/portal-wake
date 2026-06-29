@@ -155,8 +155,21 @@ start_service() {
   # foreground service and clear Android's "stopped" state so it also comes up on
   # later reboots. -f 0x20 = FLAG_INCLUDE_STOPPED_PACKAGES (reaches the fresh app).
   step "Starting portal-wake (it runs in the background — no icon)"
+  # Then wait until the recognizer is actually listening before telling the user to
+  # speak — the Vosk model + grammar take a few seconds to load, and a "hey jarvis"
+  # said before that can be missed. The service logs "wake recognizer ready" once
+  # it's listening; count existing lines first so a reinstall (debug.txt persists)
+  # waits for a NEW one rather than matching a stale line.
+  local log="/sdcard/Android/data/$PKG/files/debug.txt"
+  local base; base=$(a shell "grep -c 'wake recognizer ready' $log 2>/dev/null" | tr -dc '0-9'); base=${base:-0}
   a shell "am broadcast -a $START_ACTION -n $RECEIVER -f 0x20" >/dev/null 2>&1
-  ok "Started"
+  local i=0
+  while [ $i -lt 30 ]; do
+    local n; n=$(a shell "grep -c 'wake recognizer ready' $log 2>/dev/null" | tr -dc '0-9'); n=${n:-0}
+    [ "$n" -gt "$base" ] && { ok "Listening"; return; }
+    sleep 1; i=$((i + 1))
+  done
+  warn "Started, but couldn't confirm the listener came up — give it a few seconds before saying \"hey jarvis\"."
 }
 
 do_install() {

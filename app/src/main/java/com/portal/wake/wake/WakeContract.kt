@@ -6,8 +6,8 @@ package com.portal.wake.wake
  *
  * Portal-wake owns the always-on microphone and the recognizer; it knows nothing about any
  * specific assistant (Jarvis, Alexa) or AI model. Instead it *discovers* handlers at runtime: any installed app can
- * advertise one or more wake words by declaring an exported `<receiver>` (or `<service>`) that
- * responds to [ACTION_WAKE] and lists its phrases in a [META_KEYWORDS] meta-data string.
+ * advertise a wake word by declaring an exported `<receiver>` that responds to [ACTION_WAKE] and carries
+ * its wake word as named meta-data — one field per setting, so the declaration reads for itself.
  *
  * Example — an app adding "hey jarvis" that opens its own assistant:
  * ```xml
@@ -15,14 +15,22 @@ package com.portal.wake.wake
  *     <intent-filter>
  *         <action android:name="com.portal.wake.action.WAKE" />
  *     </intent-filter>
- *     <!-- one or more specs separated by '|', each: id;phrase;keyword[;minConf] -->
- *     <meta-data
- *         android:name="com.portal.wake.keywords"
- *         android:value="jarvis;hey jarvis;jarvis;0.55" />
+ *     <meta-data android:name="com.portal.wake.phrase"         android:value="hey jarvis" />
+ *     <meta-data android:name="com.portal.wake.min_confidence" android:value="0.55" />
+ *     <!-- optional: com.portal.wake.id (defaults to the keyword, here "jarvis") -->
  * </receiver>
  * ```
- * Manifest values must be string literals (XML cannot reference these constants); use these constants
- * in the *code* that reads the broadcast. A plugin does **not** need to depend on portal-wake — the
+ * [META_PHRASE] is the full spoken phrase: portal-wake takes the **last word as the keyword** and the
+ * **word before it as the lead** (e.g. "hey", "hi") — so the lead a user must say lives in the phrase you
+ * declare, not in portal-wake ("hi bob" works). One receiver declares **one** wake word; an app that wants
+ * several declares several receivers (discovery reads each independently).
+ * The meta-data **keys** must be string literals (XML cannot reference these constants); use these
+ * constants in the *code* that reads them. The **values** are written as plain text, but note Android
+ * type-infers `android:value` — a numeric `min_confidence` like `0.55` is stored as a float — so the
+ * reader takes each value type-agnostically (see WakeRegistry). Declare values with `android:value`, not
+ * `android:resource` (a resource reference reads back as its numeric id, not the referenced string). A
+ * plugin does **not** need to depend on
+ * portal-wake — the
  * literal strings are the contract; this object is portal-wake's own typed copy (a first-party plugin
  * may mirror the same literals rather than take a dependency, the way `portal-assistant` does).
  *
@@ -47,8 +55,18 @@ object WakeContract {
     /** Action both *discovered* (intent-filter) and *delivered* (explicit broadcast) on a match. */
     const val ACTION_WAKE = "com.portal.wake.action.WAKE"
 
-    /** Meta-data key on the handler component carrying its wake specs (see class doc for the format). */
-    const val META_KEYWORDS = "com.portal.wake.keywords"
+    /** Required meta-data key: the full spoken phrase, e.g. "hey jarvis" (keyword = last word, lead = the word before). */
+    const val META_PHRASE = "com.portal.wake.phrase"
+
+    /** Optional meta-data key: the wake id reported on a match; defaults to the keyword when absent. */
+    const val META_ID = "com.portal.wake.id"
+
+    /** Optional meta-data key: the keyword-confidence floor in [[MIN_CONFIDENCE], [MAX_CONFIDENCE]]; defaults to the matcher baseline. */
+    const val META_MIN_CONFIDENCE = "com.portal.wake.min_confidence"
+
+    /** Inclusive bounds a declared [META_MIN_CONFIDENCE] must fall within. */
+    const val MIN_CONFIDENCE = 0.0
+    const val MAX_CONFIDENCE = 1.0
 
     /** Extra (String) on [ACTION_WAKE]: the matched wake id (e.g. "jarvis"). */
     const val EXTRA_WAKE_ID = "com.portal.wake.extra.ID"

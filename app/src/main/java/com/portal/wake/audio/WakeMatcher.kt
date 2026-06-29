@@ -8,22 +8,23 @@ package com.portal.wake.audio
  *
  *  - **Strict routes** (`minConf > BASELINE_CONF` — the hand-off words jarvis/alexa, *and any plugin word
  *    above the baseline*, e.g. 0.55). A wake fires only on a **clean, uncontaminated phrase**: **no
- *    `[unk]`** ([UNK_TOKEN]), ≤ [CLEAN_PHRASE_MAX_WORDS] words, a **confident** preceding "hey"
- *    (≥ [HEY_MIN_CONF]), the keyword over its floor, and **no rival wake keyword** in the decode. The
- *    mandatory "hey" is the first guard (a bare keyword, look-alike, or noise-decoded keyword never fires),
+ *    `[unk]`** ([UNK_TOKEN]), ≤ [CLEAN_PHRASE_MAX_WORDS] words, a **confident** preceding lead — the word's
+ *    declared lead, e.g. "hey" (≥ [LEAD_MIN_CONF]) — the keyword over its floor, and **no rival wake
+ *    keyword** in the decode. The mandatory lead is the first guard (a bare keyword, look-alike, or
+ *    noise-decoded keyword never fires),
  *    but for a soundalike-prone keyword it is **not sufficient** that one is merely *present*: background
  *    audio (TV/music, or a phone call on a speaker) can decode a full "hey jarvis" — inside a long
  *    `[unk]`-laden final (observed: `[unk] alexa [unk] [unk] hey jarvis`, jarvis at 0.83), as a short
  *    contaminated phrase (observed live: `[unk] hey jarvis`, both words at ~0.99 — *every* confidence floor
  *    cleared), or with a *weak* "hey" (during a phone call nearby: `[unk] hey jarvis`, hey at 0.66). The
- *    **no-`[unk]`** gate blocks the first two — a genuine close-mic wake decodes as a bare "<hey> <keyword>"
- *    with no `[unk]`, so it costs no recall and catches what no confidence floor can (both keyword and "hey"
- *    score ~1.00 in a contaminated final); the [HEY_MIN_CONF] floor blocks the weak-"hey" case. Raising the
+ *    **no-`[unk]`** gate blocks the first two — a genuine close-mic wake decodes as a bare "<lead> <keyword>"
+ *    with no `[unk]`, so it costs no recall and catches what no confidence floor can (both keyword and lead
+ *    score ~1.00 in a contaminated final); the [LEAD_MIN_CONF] floor blocks the weak-lead case. Raising the
  *    *keyword* floor would block none of them — the FPs scored above any floor we'd keep, while real wakes
  *    score ~1.00. **Trade-off:** strict routes do *not* fire on an embedded wake ("hey could you ask jarvis")
  *    or one Vosk pads with an `[unk]` — rare, and not worth the false fires.
  *  - **Lenient routes** (`minConf <= BASELINE_CONF`, the default for a plugin that omits a floor). For
- *    recall insurance a short, clean "<hey> <keyword>" fires even at low confidence, and an embedded
+ *    recall insurance a short, clean "<lead> <keyword>" fires even at low confidence, and an embedded
  *    high-confidence keyword fires too. With the bundled lgraph model this bypass is **dormant** (real
  *    wakes decode at ≥0.92), so it's a safety net, not load-bearing.
  *
@@ -45,18 +46,27 @@ object WakeMatcher {
     const val CLEAN_PHRASE_MAX_WORDS = 3
 
     /**
-     * Confidence floor the preceding "hey" must clear on a **strict** route. A real wake decodes "hey" at
-     * 0.96–1.00 (see `TUNING.md`), so this is essentially free recall-wise, but it blocks a background-audio
-     * FP that assembles a short clean "hey jarvis" with an under-confident "hey" — observed live at 0.66
-     * during a phone call held near the Portal. Lenient routes do not apply it (present-only, for recall).
+     * Confidence floor the preceding lead (e.g. "hey") must clear on a **strict** route. A real wake decodes
+     * its lead at 0.96–1.00 (see `TUNING.md`), so this is essentially free recall-wise, but it blocks a
+     * background-audio FP that assembles a short clean "hey jarvis" with an under-confident "hey" — observed
+     * live at 0.66 during a phone call held near the Portal. Lenient routes do not apply it (present-only, for recall).
      */
-    const val HEY_MIN_CONF = 0.80
+    const val LEAD_MIN_CONF = 0.80
 
     /**
-     * Words accepted as the "hey" before a keyword (open recognition mishears it variously). Kept tight —
-     * `hey`/`hay` only; `a`, `hi`, and `he` were dropped as too-common lead-ins that widened false fires.
+     * Recognizer variants accepted for a declared lead word (open recognition mishears it). The lead itself
+     * is **declared by the wake plugin** (e.g. "hey", "hi" — the first word of its phrase); this map only
+     * adds known mishearings on top, so a lead with no entry matches itself only. "hey" tolerates "hay"
+     * (Vosk's frequent mishearing); `a`, `hi`, and `he` were deliberately *not* added to "hey" as
+     * too-common lead-ins that widened false fires.
      */
-    val HEY_WORDS = setOf("hey", "hay")
+    val LEAD_ALIASES: Map<String, Set<String>> = mapOf("hey" to setOf("hey", "hay"))
+
+    /**
+     * The words accepted as [WakeWord.lead] for [w] — its [LEAD_ALIASES] variants, or just the lead itself —
+     * or null when the word declares no lead (then no preceding-word gate applies).
+     */
+    fun acceptedLeads(w: WakeWord): Set<String>? = w.lead?.let { LEAD_ALIASES[it] ?: setOf(it) }
 
     /**
      * Vosk's "unknown" escape token — the single source of truth for it: [WakeRecognizer.buildGrammar] adds
@@ -117,15 +127,17 @@ object WakeMatcher {
      * lives, so [match] and the near-miss log can never disagree.
      */
     private fun rejectionReason(lower: List<RecWord>, i: Int, w: WakeWord, wakeWords: List<WakeWord>): String? {
-        // Must be preceded by a "hey"-word somewhere before that keyword.
+        // Must be preceded by the word's declared lead (e.g. "hey", "hi"). A word with no declared lead
+        // (leads == null) skips this prefix gate.
         val before = lower.subList(0, i)
-        if (before.none { it.word in HEY_WORDS }) return "no 'hey' before '${w.keyword}'"
+        val leads = acceptedLeads(w)
+        if (leads != null && before.none { it.word in leads }) return "no '${w.lead}' before '${w.keyword}'"
 
         val cleanPhrase = lower.size <= CLEAN_PHRASE_MAX_WORDS
         if (w.minConf > BASELINE_CONF) {
             // Strict route = any floor above BASELINE_CONF (the jarvis/alexa defaults, and any plugin
-            // word > 0.50). Demand an UNCONTAMINATED, CLEAN phrase, a CONFIDENT "hey", the keyword over its
-            // floor, and no rival wake keyword — see the class KDoc for why mere "hey" *presence* isn't enough.
+            // word > 0.50). Demand an UNCONTAMINATED, CLEAN phrase, a CONFIDENT lead, the keyword over its
+            // floor, and no rival wake keyword — see the class KDoc for why mere lead *presence* isn't enough.
             // Contamination first: an "[unk]" in the final means non-wake audio decoded in the same window. A
             // genuine close-mic wake decodes as a bare "<hey> <keyword>" with no "[unk]" (observed across every
             // real fire); a leading/trailing "[unk]" is the tell-tale of background audio assembling a wake
@@ -133,8 +145,8 @@ object WakeMatcher {
             // could catch it). Strict = uncontaminated, so reject any "[unk]" outright.
             if (lower.any { it.word == UNK_TOKEN }) return "contaminated ('$UNK_TOKEN' in decode)"
             if (!cleanPhrase) return "phrase too long (${lower.size} words > $CLEAN_PHRASE_MAX_WORDS)"
-            if (before.none { it.word in HEY_WORDS && it.conf >= HEY_MIN_CONF }) {
-                return "'hey' under $HEY_MIN_CONF floor"
+            if (leads != null && before.none { it.word in leads && it.conf >= LEAD_MIN_CONF }) {
+                return "'${w.lead}' under $LEAD_MIN_CONF floor"
             }
             if (lower[i].conf < w.minConf) return "'${w.keyword}' ${conf(lower[i].conf)} under ${w.minConf} floor"
             if (containsRivalKeyword(lower, w, wakeWords)) return "rival wake keyword in decode"

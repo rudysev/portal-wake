@@ -36,20 +36,30 @@ Windows "unblock files" step).
 ## Plugins — adding a "hey X" without touching this app
 
 Wake words are **discovered at runtime**, not hard-coded. Any installed app becomes a wake plugin by
-declaring an exported receiver that responds to `com.portal.wake.action.WAKE` and lists its phrases in
-a meta-data string. Example — an app that adds "hey jarvis":
+declaring an exported receiver that responds to `com.portal.wake.action.WAKE` and carries its wake word
+as **named meta-data** — one field per setting. Example — an app that adds "hey jarvis":
 
 ```xml
 <receiver android:name=".WakeHandoffReceiver" android:exported="true">
     <intent-filter>
         <action android:name="com.portal.wake.action.WAKE" />
     </intent-filter>
-    <!-- specs separated by '|', each: id;phrase;keyword[;minConf] -->
-    <meta-data
-        android:name="com.portal.wake.keywords"
-        android:value="jarvis;hey jarvis;jarvis;0.55" />
+    <meta-data android:name="com.portal.wake.phrase"         android:value="hey jarvis" />
+    <meta-data android:name="com.portal.wake.min_confidence" android:value="0.55" />
+    <!-- optional: com.portal.wake.id  (defaults to the keyword, here "jarvis") -->
 </receiver>
 ```
+
+- **`phrase`** (required) — the full spoken phrase. Portal-Wake takes the **last word as the keyword**
+  and the **word before it as the lead** ("hey", "hi", …). The lead a user must say therefore lives in
+  *your* phrase, not in Portal-Wake — so `hi bob` works just as well, and a single word like `computer`
+  registers with no required lead.
+- **`min_confidence`** (optional, default ~0.5) — the keyword-confidence floor; above the baseline it
+  enables the strict (precise) matching used for hand-off words like jarvis. A missing or malformed value
+  falls back to the default (and is logged); it never disables the wake word.
+- **`id`** (optional) — the value reported back on a match; defaults to the keyword.
+- **One receiver = one wake word.** To register several, declare several receivers — each is discovered
+  independently.
 
 ## For developers — build from source
 

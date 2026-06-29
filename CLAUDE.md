@@ -80,8 +80,8 @@ behind commons' PcmDevice is the shared `com.portal.commons.audio.AudioRecordPcm
 WakeRecognizer = Vosk boundary [warm-up on init AND after
 every reset + ready-gate], WakeMatcher = accuracy gate [tested], CallGate = in-call gate [tested], WakeWord,
 PcmRingBuffer = fixed-capacity pre-ready PCM FIFO [tested]).
-`wake/` = the extensibility layer (WakeContract = the published plugin contract [tested], WakeKeywordParser
-= its `META_KEYWORDS` parser [tested], WakeRegistry = discovery, WakeTarget = word↔handler, HandoffRecovery =
+`wake/` = the extensibility layer (WakeContract = the published plugin contract [tested], WakeSpec
+= builds a WakeWord from a plugin's named wake meta-data [tested], WakeRegistry = discovery, WakeTarget = word↔handler, HandoffRecovery =
 reclaim rule [tested], MicContentionDetector = foreign-recording-session detector [tested], CaptureGate =
 two-reason capture coordinator [call + handoff; tested]).
 `system/` — `MicLiberator` frees the mic slot; `Falcon` drives the native Alexa client via its `LISTEN`
@@ -90,9 +90,9 @@ intent (the **alexa** route). **Shared code lives in `portal-commons` (the sibli
 + device lifecycle, `PcmCaptureFormat`, `DebugLog` `files/debug.txt` log), plus the Android-library
 `com.portal:commons-android` (`com.portal.commons.audio.AudioRecordPcmDevice`, the shared mic shell that
 can't live in pure-JVM commons) — both pulled in via Gradle composite build. The wake plugin contract
-(`WakeContract`) and its `META_KEYWORDS` parser (`WakeKeywordParser`) are **this app's own** (`wake/`), not
-shared: the literal wire strings are the contract, so plugins like portal-assistant mirror them.** Pure logic (WakeMatcher, CallGate,
-HandoffRecovery, CaptureGate, JSON/spec parsing) is unit-tested; mic/service behavior is device-tested;
+(`WakeContract`) and its `WakeSpec` builder of the named wake meta-data are **this app's own** (`wake/`), not
+shared: the literal wire strings (the meta-data keys) are the contract, so plugins like portal-assistant mirror them.** Pure logic (WakeMatcher, CallGate,
+HandoffRecovery, CaptureGate, WakeSpec) is unit-tested; mic/service behavior is device-tested;
 `commons` has its own unit tests (incl. PcmCaptureSession).
 
 ## Build / deploy

@@ -14,8 +14,8 @@ class WakeMatcherTest {
 
     // vega is lenient (floor at the baseline). "jarvis" stands in for a strict plugin word (floor
     // above the baseline) so we still cover the no-lenient-bypass path.
-    private val vega = WakeWord("vega", "hey vega", "vega", WakeMatcher.BASELINE_CONF)
-    private val jarvis = WakeWord("jarvis", "hey jarvis", "jarvis", 0.60)
+    private val vega = WakeWord("vega", keyword = "vega", lead = "hey", minConf = WakeMatcher.BASELINE_CONF)
+    private val jarvis = WakeWord("jarvis", keyword = "jarvis", lead = "hey", minConf = 0.60)
     private val words = listOf(vega, jarvis)
 
     private fun rec(vararg pairs: Pair<String, Double>) = pairs.map { RecWord(it.first, it.second) }
@@ -113,7 +113,7 @@ class WakeMatcherTest {
     @Test fun strictWord_crossContaminatedDecode_doesNotMatch() {
         // A *clean* 3-word decode that still carries a rival wake keyword ("alexa" while matching jarvis) is
         // suspect — a genuine "hey jarvis" never also contains "alexa". Reject regardless of length/confidence.
-        val both = listOf(jarvis, WakeWord("alexa", "hey alexa", "alexa", 0.60))
+        val both = listOf(jarvis, WakeWord("alexa", keyword = "alexa", lead = "hey", minConf = 0.60))
         assertNull(WakeMatcher.match(rec("alexa" to 0.79, "hey" to 0.84, "jarvis" to 0.83), both))
     }
 
@@ -133,20 +133,20 @@ class WakeMatcherTest {
     @Test fun strictWord_exactProductionFalseFire_doesNotMatch() {
         // The real live-stream FP verbatim, with the production registry (jarvis + alexa both strict): a
         // 6-word [unk]-laden decode carrying "alexa" and "hey jarvis" (0.83). Both gates fail it.
-        val prod = listOf(jarvis, WakeWord("alexa", "hey alexa", "alexa", 0.60))
+        val prod = listOf(jarvis, WakeWord("alexa", keyword = "alexa", lead = "hey", minConf = 0.60))
         val r = rec("[unk]" to 1.0, "alexa" to 0.79, "[unk]" to 0.98, "[unk]" to 0.99, "hey" to 0.84, "jarvis" to 0.83)
         assertNull(WakeMatcher.match(r, prod))
     }
 
     @Test fun strictWord_weakHey_doesNotMatch() {
         // A short clean "hey jarvis", jarvis over its floor (0.95) but "hey" under-confident at 0.66 — the
-        // signature of background audio. A real wake decodes "hey" at 0.96–1.00, so the HEY_MIN_CONF floor
+        // signature of background audio. A real wake decodes "hey" at 0.96–1.00, so the LEAD_MIN_CONF floor
         // rejects this with no recall cost. (No "[unk]" here, so the contamination gate isn't what's tested.)
         assertNull(WakeMatcher.match(rec("hey" to 0.66, "jarvis" to 0.95), words))
     }
 
     @Test fun strictWord_confidentHey_matches() {
-        // A genuine bare wake — no "[unk]", confident "hey" (≥ HEY_MIN_CONF), keyword over floor — must fire.
+        // A genuine bare wake — no "[unk]", confident "hey" (≥ LEAD_MIN_CONF), keyword over floor — must fire.
         assertEquals("jarvis", WakeMatcher.match(rec("hey" to 0.96, "jarvis" to 0.95), words))
     }
 
@@ -177,8 +177,21 @@ class WakeMatcherTest {
     }
 
     @Test fun extensible_customWakeWord() {
-        val computer = WakeWord("computer", "hey computer", "computer", 0.55)
+        val computer = WakeWord("computer", keyword = "computer", lead = "hey", minConf = 0.55)
         assertEquals("computer", WakeMatcher.match(rec("hey" to 0.9, "computer" to 0.9), listOf(computer)))
+    }
+
+    @Test fun pluginDeclaredLead_hiBob_firesOnHiNotHey() {
+        // The lead comes from the plugin's declared phrase, not a hardcoded "hey": "hi bob" requires "hi".
+        val bob = WakeWord("bob", keyword = "bob", lead = "hi", minConf = 0.55)
+        assertEquals("bob", WakeMatcher.match(rec("hi" to 0.9, "bob" to 0.9), listOf(bob)))
+        assertNull(WakeMatcher.match(rec("hey" to 0.9, "bob" to 0.9), listOf(bob)))
+    }
+
+    @Test fun noLeadWord_firesOnBareKeyword() {
+        // A single-word phrase declares no lead → no prefix gate; a clean bare keyword fires.
+        val computer = WakeWord("computer", keyword = "computer", lead = null, minConf = 0.55)
+        assertEquals("computer", WakeMatcher.match(rec("computer" to 0.9), listOf(computer)))
     }
 
     // ---- evaluate(): near-miss diagnostics ---------------------------------------------------------

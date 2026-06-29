@@ -37,17 +37,20 @@ class WakeRecognizer(
     @Volatile private var wakeWords: List<WakeWord> = initialWakeWords
 
     /**
-     * Vosk JSON grammar built from the current wake phrases + their keywords, plus "hey" and an "[unk]"
-     * escape token. "[unk]" absorbs non-matching speech so the decoder doesn't force look-alikes onto a
-     * wake phrase; the per-phrase entries bias it toward a real wake — the single biggest accuracy win.
+     * Vosk JSON grammar built from the current wake phrases + their keywords + each word's declared lead
+     * (e.g. "hey"), plus an "[unk]" escape token. "[unk]" absorbs non-matching speech so the decoder doesn't
+     * force look-alikes onto a wake phrase; the per-phrase entries bias it toward a real wake — the single
+     * biggest accuracy win. The lead comes from the wake word (declared by the plugin), not a hardcoded
+     * "hey"; only the declared lead is added (not its [WakeMatcher.LEAD_ALIASES] mishearings), so the grammar
+     * stays identical to what a "hey jarvis" produced before — on-device recall is unaffected.
      */
     private fun buildGrammar(words: List<WakeWord>): String {
         val entries = LinkedHashSet<String>()
         words.forEach {
             entries.add(it.phrase.lowercase())
             entries.add(it.keyword.lowercase())
+            it.lead?.let { lead -> entries.add(lead.lowercase()) }
         }
-        entries.add("hey")
         entries.add(WakeMatcher.UNK_TOKEN) // same token WakeMatcher's strict contamination gate rejects
         return entries.joinToString(prefix = "[", postfix = "]") { "\"$it\"" }
     }

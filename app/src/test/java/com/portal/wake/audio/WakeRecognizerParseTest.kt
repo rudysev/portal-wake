@@ -40,7 +40,7 @@ class WakeRecognizerParseTest {
     }
 
     @Test fun endToEnd_parseThenMatch() {
-        val jarvis = WakeWord("jarvis", "hey jarvis", "jarvis", WakeMatcher.BASELINE_CONF)
+        val jarvis = WakeWord.fromPhrase("hey jarvis", id = "jarvis", minConf = WakeMatcher.BASELINE_CONF)!!
         val json = """{"result":[{"conf":0.9,"word":"hey"},{"conf":0.2,"word":"jarvis"}],"text":"hey jarvis"}"""
         val id = WakeMatcher.match(WakeRecognizer.parseResult(json), listOf(jarvis))
         assertEquals("jarvis", id)

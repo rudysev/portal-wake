@@ -13,8 +13,10 @@ class WakeContractTest {
         assertEquals("com.portal.wake.action.WAKE", WakeContract.ACTION_WAKE)
     }
 
-    @Test fun metaKeyIsStable() {
-        assertEquals("com.portal.wake.keywords", WakeContract.META_KEYWORDS)
+    @Test fun metaKeysAreStable() {
+        assertEquals("com.portal.wake.phrase", WakeContract.META_PHRASE)
+        assertEquals("com.portal.wake.id", WakeContract.META_ID)
+        assertEquals("com.portal.wake.min_confidence", WakeContract.META_MIN_CONFIDENCE)
     }
 
     @Test fun extraIdIsStable() {
