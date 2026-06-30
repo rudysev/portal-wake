@@ -172,10 +172,18 @@ function Start-WakeService {
   # be missed. The service logs "wake recognizer ready" once it's listening; count existing
   # lines first so a reinstall (debug.txt persists) waits for a NEW one, not a stale line.
   $log = "/sdcard/Android/data/$($cfg["PKG"])/files/debug.txt"
-  $base = [int]((A shell "grep -c 'wake recognizer ready' $log 2>/dev/null") -replace '\D','')
+  # Count "wake recognizer ready" lines, robust to the file not existing yet (first run): a missing
+  # file makes adb/grep return an empty or blank-line array, and feeding that array straight to [int]
+  # throws "Cannot convert System.Object[] to System.Int32". Collapse to a scalar, strip non-digits,
+  # and treat "no number" as 0.
+  function Count-Ready {
+    $digits = ((A shell "grep -c 'wake recognizer ready' $log 2>/dev/null") -join "`n") -replace '\D',''
+    if ($digits) { [int]$digits } else { 0 }
+  }
+  $base = Count-Ready
   A shell "am broadcast -a $($cfg["START_ACTION"]) -n $($cfg["RECEIVER"]) -f 0x20" | Out-Null
   for ($i = 0; $i -lt 30; $i++) {
-    $n = [int]((A shell "grep -c 'wake recognizer ready' $log 2>/dev/null") -replace '\D','')
+    $n = Count-Ready
     if ($n -gt $base) { Ok "Listening"; return }
     Start-Sleep -Seconds 1
   }
