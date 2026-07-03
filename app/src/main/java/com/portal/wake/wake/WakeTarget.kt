@@ -1,7 +1,7 @@
 package com.portal.wake.wake
 
 import android.content.ComponentName
-import com.portal.wake.audio.WakeWord
+import com.portal.commons.audio.WakeWord
 
 /**
  * A wake word paired with what to do when it fires.

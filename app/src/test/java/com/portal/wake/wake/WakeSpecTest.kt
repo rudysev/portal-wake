@@ -1,13 +1,13 @@
 package com.portal.wake.wake
 
-import com.portal.wake.audio.WakeMatcher
+import com.portal.commons.audio.WakeMatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * [WakeSpec.build] — turns a plugin's declared meta-data fields into a validated [com.portal.wake.audio.WakeWord],
+ * [WakeSpec.build] — turns a plugin's declared meta-data fields into a validated [com.portal.commons.audio.WakeWord],
  * reporting any mistake (with the offending field) so a developer can fix it from the log. Keyword/lead
  * derivation is WakeWord.fromPhrase's job; here we cover validation + that the right reason is reported.
  */

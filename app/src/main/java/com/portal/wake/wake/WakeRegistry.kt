@@ -6,8 +6,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import com.portal.commons.DebugLog
-import com.portal.wake.audio.WakeMatcher
-import com.portal.wake.audio.WakeWord
+import com.portal.commons.audio.WakeMatcher
+import com.portal.commons.audio.WakeWord
 import com.portal.wake.system.Falcon
 
 /**

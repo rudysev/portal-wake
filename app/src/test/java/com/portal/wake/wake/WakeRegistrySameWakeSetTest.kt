@@ -1,7 +1,7 @@
 package com.portal.wake.wake
 
-import com.portal.wake.audio.WakeMatcher
-import com.portal.wake.audio.WakeWord
+import com.portal.commons.audio.WakeMatcher
+import com.portal.commons.audio.WakeWord
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

@@ -7,13 +7,16 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
 import android.media.AudioRecordingConfiguration
+import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import com.portal.commons.DebugLog
-import com.portal.wake.audio.WakeMicEngine
+import com.portal.commons.audio.WakeMicEngine
 import com.portal.wake.system.Falcon
+import com.portal.wake.system.MicLiberator
 import com.portal.wake.wake.WakeContract
 import com.portal.wake.wake.WakeRegistry
 import com.portal.wake.wake.WakeTarget
@@ -49,14 +52,43 @@ class WakeService :
     }
 
     /**
-     * The Android recording-config callback: registered on [main] in [onCreate], it forwards just the session
-     * ids to the (Android-free) [arbiter]. The arbiter owns the contention/recovery decision; this is only the
-     * Android shell that feeds it.
+     * The Android recording-config callback: registered on [main] in [onCreate], it forwards the session ids
+     * to the (Android-free) [arbiter] — which owns the contention/recovery decision; this is only the Android
+     * shell that feeds it. On API 29+ it *also* emits the [logSilencing] diagnostic from the same configs (pure
+     * logging, not fed to the arbiter — see [logSilencing]).
      */
     private val recordingCallback = object : AudioManager.AudioRecordingCallback() {
         override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>?) {
-            arbiter.onRecordingConfigs(configs?.map { it.clientAudioSessionId } ?: emptyList())
+            val list = configs ?: emptyList()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) logSilencing(list)
+            arbiter.onRecordingConfigs(list.map { it.clientAudioSessionId })
         }
+    }
+
+    /**
+     * API 29+ diagnostic for the Android 10 microphone wall. API 29 replaced single-owner mic capture with
+     * *concurrent capture + silencing*: a recorder keeps running but its audio is replaced with **silence**
+     * ([AudioRecordingConfiguration.isClientSilenced]) rather than being blocked — no read error, no gap, just
+     * no wake. On this Portal's Android 10 build a **sideloaded background foreground-service is silenced even
+     * as the sole capturer**; only the resumed top Activity records. Confirmed on device via `dumpsys audio`
+     * (`pack:com.portal.wake … silenced:true`). Attempts to escape it — holding the assistant role
+     * (`VoiceInteractionService`), a `TYPE_APPLICATION_OVERLAY` window, forcing the `RECORD_AUDIO` appop — all
+     * failed; the only real fix is a privileged/system install (`CAPTURE_AUDIO_HOTWORD`), blocked on a locked
+     * retail unit. So headless background wake is **not supported on Android 10**; this log is what proved that
+     * and is kept for future re-investigation (e.g. on an unlocked device).
+     *
+     * We deliberately do **not** try to identify *which* config is ours: on this Portal the session ids in the
+     * callback don't match our `AudioRecord`'s (the same reason [com.portal.wake.wake.MicContentionDetector]
+     * seeds rather than compares), so we log the whole picture. Pure logging; it is **not** fed to the arbiter.
+     */
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun logSilencing(configs: List<AudioRecordingConfiguration>) {
+        val silenced = configs.filter { it.isClientSilenced }
+        if (silenced.isEmpty()) return
+        DebugLog.log(
+            "silencing: ${silenced.size}/${configs.size} recording client(s) silenced " +
+                "(sessions=${silenced.map { it.clientAudioSessionId }}) — concurrent-capture policy active",
+        )
     }
 
     private var engine: WakeMicEngine? = null
@@ -171,6 +203,9 @@ class WakeService :
             // Same guard for the session stopping (incl. a rare in-loop exception death, which doesn't fire
             // onError). Harmless on a normal pause (flag already false; same generation).
             onStopped = { main.post { if (engineGeneration == generation) capturing = false } },
+            // Free the Portal's own native wake services on each acquire so we own the single mic slot.
+            // (This is the Portal-specific hook the shared engine leaves injectable; the assistant passes none.)
+            beforeStart = { MicLiberator.freeMic(applicationContext) },
         )
     }
 

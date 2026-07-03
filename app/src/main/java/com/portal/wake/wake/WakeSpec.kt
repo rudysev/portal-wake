@@ -1,6 +1,6 @@
 package com.portal.wake.wake
 
-import com.portal.wake.audio.WakeWord
+import com.portal.commons.audio.WakeWord
 
 /**
  * Builds a [WakeWord] from one wake plugin's declared meta-data fields (see [WakeContract]). Reading the

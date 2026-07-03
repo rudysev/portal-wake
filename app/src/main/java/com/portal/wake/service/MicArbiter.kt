@@ -37,7 +37,7 @@ internal class MicArbiter(
 
     /**
      * The engine-side seam: [MicArbiter] *decides*, [WakeService] *applies* the decision to the real
-     * [com.portal.wake.audio.WakeMicEngine]. Keeping the engine out of the arbiter is what lets the
+     * [com.portal.commons.audio.WakeMicEngine]. Keeping the engine out of the arbiter is what lets the
      * arbitration logic be reasoned about (and, with a fake controller + clock, unit-tested) on its own.
      */
     interface CaptureController {
