@@ -134,6 +134,15 @@ class WakeService :
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(WakeNotification.ID, WakeNotification.build(this))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Belt-and-suspenders: start() already refuses on gen2, but guard the service's own entry point too so
+            // any future/direct caller that bypasses start() can't strand us holding the OS-silenced mic slot. We
+            // still call startForeground above first to honour the startForegroundService contract, then stand down
+            // before buildEngine/arbiter ever grab the mic. START_NOT_STICKY so the OS won't relaunch us.
+            DebugLog.log("A10+ (gen2): onStartCommand refused — wake is in-app on the assistant; portal-wake inert")
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (!started) {
             started = true
             buildEngine()
@@ -319,8 +328,24 @@ class WakeService :
         private const val HANDOFF_FLAGS =
             Intent.FLAG_INCLUDE_STOPPED_PACKAGES or Intent.FLAG_RECEIVER_FOREGROUND
 
-        /** Start (or no-op if already running) the always-on wake service. */
+        /**
+         * Start (or no-op if already running) the always-on wake service.
+         *
+         * **Gen2 (Android 10, API 29+) self-guard.** On A10 the OS silences a background foreground-service's
+         * mic (see [logSilencing]), so this service can only ever hear silence — while still holding the single
+         * mic slot and thereby starving the assistant's in-app foreground detector, which owns "hey jarvis" on
+         * gen2. So we refuse to start: nothing runs, nothing holds the mic, no notification. On A9 (gen1,
+         * API 28) nothing changes — this is the working wake path there. New gen2 setups also skip portal-wake
+         * in the portal-apps installer; this guard covers a manual/direct install. `start()` is the single
+         * chokepoint (BootReceiver — boot, quick-boot, and the installer's ACTION_START — routes here; the
+         * service itself is non-exported).
+         */
         fun start(context: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                DebugLog.file = File(context.getExternalFilesDir(null), "debug.txt")
+                DebugLog.log("A10+ (gen2): wake handled in-app by the assistant — portal-wake inert, not starting")
+                return
+            }
             ContextCompat.startForegroundService(context, Intent(context, WakeService::class.java))
         }
     }
