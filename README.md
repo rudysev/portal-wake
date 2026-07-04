@@ -25,7 +25,7 @@ The easy way — no building, no command line:
 5. When the Portal asks **"Allow USB debugging?"**, tap **Allow**.
 
 The installer handles everything else: it downloads Android's `adb` if needed, downloads the app
-(~180 MB — the on-device speech model is bundled in), installs it, grants the microphone, and starts it.
+(a large download — the on-device speech model is bundled in), installs it, grants the microphone, and starts it.
 The app has **no icon**; it runs in the background and comes back on every reboot. Say **"hey jarvis"**
 near the Portal. To remove it, double-click **`Uninstall-PortalWake`** — this also re-enables Meta's
 built-in "Hey Alexa" detector, returning the Portal to its original state.

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # Build the portal-wake APK and publish it as a GitHub Release asset, so the
-# one-click installer in provisioning/ can download it. The APK (~180 MB, with the
-# speech model bundled) is too large to commit, so a Release is how it ships.
+# one-click installer in provisioning/ can download it. The APK (with the speech
+# model bundled) is too large to commit, so a Release is how it ships.
 #
 # Requires the GitHub CLI (gh), authenticated against the repo: `gh auth login`.
 # Build a debug APK locally first by having a JDK (17/21) + Android SDK configured.

@@ -127,7 +127,7 @@ function Install-App {
       if ($fresh) {
         Step "Latest portal-wake release already downloaded ($($asset.Name)) - using it"
       } else {
-        Step "Downloading the latest portal-wake release ($($asset.Name), ~180 MB - bundles the speech model)"
+        Step "Downloading the latest portal-wake release ($($asset.Name) - bundles the speech model, so it's large)"
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
         $part = "$dest.part"
         $oldPref = $ProgressPreference; $ProgressPreference = "SilentlyContinue"  # the progress bar cripples large downloads on Windows PowerShell 5.1

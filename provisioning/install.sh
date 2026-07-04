@@ -14,6 +14,7 @@
 
 set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SELF="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"   # absolute path to this script — survives the cd below (for --help)
 cd "$SCRIPT_DIR"
 
 # ----- pretty output ---------------------------------------------------------
@@ -144,7 +145,7 @@ install_app() {
       if [ -f "$apk" ] && { [ -z "$digest" ] || [ -z "$have" ] || [ "$have" = "$digest" ]; }; then
         step "Latest portal-wake release already downloaded ($name) — using it"
       else
-        step "Downloading the latest portal-wake release ($name, ~180 MB — bundles the speech model)"
+        step "Downloading the latest portal-wake release ($name — bundles the speech model, so it's large)"
         mkdir -p "$cachedir"
         curl -fSL --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 30 \
           -o "$apk.part" "$url" || die "Could not download the release APK. Check your connection."
@@ -248,7 +249,7 @@ case "${1:-}" in
   --uninstall|--restore|-u) do_uninstall ;;
   --status|-s)              do_status ;;
   --local|-l)               LOCAL_APK="${2:-$DEFAULT_BUILD_APK}"; do_install ;;
-  --help|-h)                sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' ;;
+  --help|-h)                sed -n '2,16p' "$SELF" | sed 's/^# \{0,1\}//' ;;
   "")                       do_install ;;
   *)                        die "Unknown option: $1 (use --local, --uninstall, --status, or no argument)" ;;
 esac

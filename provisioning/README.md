@@ -15,7 +15,7 @@ cable, and a computer.
 5. Wait for **"Done."** — then say **"hey jarvis"** near the Portal.
 
 The installer does everything else automatically: it downloads Android's `adb` if you
-don't have it, downloads the app (about 180 MB — it includes the on‑device speech
+don't have it, downloads the app (it's large — it includes the on‑device speech
 model), installs it, grants the microphone, frees the microphone slot, and starts it.
 The app has **no icon** — it runs in the background and starts again on every reboot.
 
