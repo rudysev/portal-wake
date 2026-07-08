@@ -167,17 +167,17 @@ function Free-MicSlot {
 
 function Start-WakeService {
   Step "Starting portal-wake (it runs in the background - no icon)"
-  # Wait until the recognizer is actually listening before telling the user to speak — the
-  # Vosk model + grammar take a few seconds to load, and a "hey jarvis" said before that can
-  # be missed. The service logs "wake recognizer ready" once it's listening; count existing
+  # Wait until the detector is actually listening before telling the user to speak — the
+  # ONNX models take a few seconds to load, and a "hey jarvis" said before that can
+  # be missed. The service logs "wake detector ready" once it's listening; count existing
   # lines first so a reinstall (debug.txt persists) waits for a NEW one, not a stale line.
   $log = "/sdcard/Android/data/$($cfg["PKG"])/files/debug.txt"
-  # Count "wake recognizer ready" lines, robust to the file not existing yet (first run): a missing
+  # Count "wake detector ready" lines, robust to the file not existing yet (first run): a missing
   # file makes adb/grep return an empty or blank-line array, and feeding that array straight to [int]
   # throws "Cannot convert System.Object[] to System.Int32". Collapse to a scalar, strip non-digits,
   # and treat "no number" as 0.
   function Count-Ready {
-    $digits = ((A shell "grep -c 'wake recognizer ready' $log 2>/dev/null") -join "`n") -replace '\D',''
+    $digits = ((A shell "grep -c 'wake detector ready' $log 2>/dev/null") -join "`n") -replace '\D',''
     if ($digits) { [int]$digits } else { 0 }
   }
   $base = Count-Ready

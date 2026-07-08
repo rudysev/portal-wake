@@ -43,7 +43,6 @@ docs/*
 !docs/img/
 
 build/
-# Downloaded speech model (not committed); keep the folder's README.
-/app/src/main/assets/model-en-us/*
-!/app/src/main/assets/model-en-us/README.md
+# Unused local asset dir (models ship via portal-commons).
+/app/src/main/assets/model-en-us/
 .cursorrules

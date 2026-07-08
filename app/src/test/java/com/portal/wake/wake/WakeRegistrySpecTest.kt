@@ -1,25 +1,18 @@
 package com.portal.wake.wake
 
-import com.portal.commons.audio.WakeMatcher
+import com.portal.commons.audio.WakeWord
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Locks the built-in "jarvis" default the registry falls back to when no plugin declares it: it must keep
- * the strict floor (lenient clean-phrase bypass OFF) and the "hey" lead, so a low-confidence or lead-less
- * "jarvis" can't fire from the fallback route. The installed assistant overrides it via its manifest, but
- * the default must match. (Spec parsing/validation is covered by [WakeSpecTest].)
- */
+/** Locks the built-in "jarvis" default the registry falls back to when no plugin declares it. */
 class WakeRegistrySpecTest {
 
-    @Test fun builtinJarvisIsStrictWithHeyLead() {
+    @Test fun builtinJarvisHasHeyLeadAndDefaultThreshold() {
         val j = WakeRegistry.BUILTIN_JARVIS
         assertEquals("jarvis", j.id)
         assertEquals("jarvis", j.keyword)
         assertEquals("hey", j.lead)
         assertEquals("hey jarvis", j.phrase)
-        assertEquals(WakeMatcher.STRICT_MIN_CONF, j.minConf, 1e-9)
-        assertTrue(j.minConf > WakeMatcher.BASELINE_CONF)
+        assertEquals(WakeWord.DEFAULT_MIN_CONF, j.minConf, 1e-9)
     }
 }

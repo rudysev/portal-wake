@@ -1,6 +1,5 @@
 package com.portal.wake.wake
 
-import com.portal.commons.audio.WakeMatcher
 import com.portal.commons.audio.WakeWord
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -65,7 +64,7 @@ class WakeRegistrySameWakeSetTest {
     @Test fun builtinJarvisEqualsAssistantSpec_soWordsAreUnchangedAcrossInstall() {
         val builtin = listOf(WakeRegistry.BUILTIN_JARVIS)
         val fromPluginSpec = listOf(
-            WakeSpec.build("hey jarvis", id = "jarvis", minConfidence = "0.6", defaultMinConf = WakeMatcher.BASELINE_CONF) {}!!,
+            WakeSpec.build("hey jarvis", id = "jarvis", minConfidence = "0.5", defaultMinConf = WakeWord.DEFAULT_MIN_CONF) {}!!,
         )
         assertTrue(WakeRegistry.sameWakeSet(builtin, fromPluginSpec))
     }
