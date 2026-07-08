@@ -14,11 +14,15 @@ import android.os.Looper
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import com.portal.commons.DebugLog
+import com.portal.commons.audio.OpenWakeWordDetector
+import com.portal.commons.audio.VoskWakeDetector
+import com.portal.commons.audio.WakeDetector
 import com.portal.commons.audio.WakeMicEngine
 import com.portal.wake.system.Falcon
 import com.portal.wake.system.MicLiberator
 import com.portal.wake.wake.WakeContract
 import com.portal.wake.wake.WakeRegistry
+import com.portal.wake.wake.WakeRouting
 import com.portal.wake.wake.WakeTarget
 import java.io.File
 
@@ -94,6 +98,13 @@ class WakeService :
     private var engine: WakeMicEngine? = null
     private var targets: List<WakeTarget> = emptyList()
     private var started = false
+
+    // Routing state for the oww-is-default split, resolved from the wake set (not per-fire — see [onWake]).
+    // owwActive: are the oww assets bundled (so oww is the default detector)? Fixed for the process.
+    // owwOwnedId: which wake id oww owns in the current set (the "hey jarvis" word), or null if none — kept in
+    // sync on every wake-set change so a grammar swap that re-ids jarvis can't desync the Vosk suppression.
+    private var owwActive = false
+    private var owwOwnedId: String? = null
 
     // Whether the current engine is started (reflects what we last applied). The arbiter drives this via
     // startCapture/pauseCapture, but onError/onStopped also clear it out-of-band (guarded by engineGeneration)
@@ -194,12 +205,19 @@ class WakeService :
             engine = null
             return
         }
+        owwActive = OpenWakeWordDetector.assetsPresent(applicationContext)
+        owwOwnedId = if (owwActive) OpenWakeWordDetector.ownedWakeId(words) else null
         val generation = ++engineGeneration
-        engine = WakeMicEngine.vosk(
+        engine = WakeMicEngine(
             context = applicationContext,
             wakeWords = words,
-            onUnavailable = { DebugLog.log("wake unavailable (model missing) — service idle") },
+            // openWakeWord is the default (routing) detector for the "hey jarvis" word. Vosk still runs
+            // alongside it: it routes the OTHER discovered words (the built-in "alexa" route + any plugin-declared
+            // word oww can't hear) and is the jarvis fallback when oww's assets are absent. See [onWake] for the
+            // routing split; all detectors see bit-identical mic audio.
+            detectorFactories = detectorFactories(),
             onWake = ::onWake,
+            onUnavailable = { name -> DebugLog.log("wake unavailable ($name)") },
             // A capture-open failure surfaces here; clear capturing so the call poll's reconcile() retries.
             // Guarded by generation so a stale callback from an engine that a later buildEngine() replaced
             // (on an empty↔non-empty transition) can't clear the live new session's flag.
@@ -216,6 +234,22 @@ class WakeService :
             // (This is the Portal-specific hook the shared engine leaves injectable; the assistant passes none.)
             beforeStart = { MicLiberator.freeMic(applicationContext) },
         )
+    }
+
+    /**
+     * The detector set. **openWakeWord is the default** — it routes "hey jarvis" (see [onWake]) when its
+     * (bundled, shared-from-commons) assets are present. **Vosk always runs**: it routes every OTHER discovered
+     * word (the "alexa" route + any plugin word oww can't hear) and is the jarvis fallback when oww is absent.
+     * Drop the oww assets to fall back to the old Vosk-routes-everything behavior.
+     */
+    private fun detectorFactories(): List<WakeDetector.Factory> = buildList {
+        add(VoskWakeDetector.factory())
+        if (OpenWakeWordDetector.assetsPresent(applicationContext)) {
+            DebugLog.log("openWakeWord assets present → oww is the DEFAULT detector for jarvis (Vosk routes other words)")
+            add(OpenWakeWordDetector.factory())
+        } else {
+            DebugLog.log("openWakeWord assets absent → Vosk routes all words")
+        }
     }
 
     /** Coalesce a burst of package broadcasts (one reinstall = 2–3) into a single debounced refresh. */
@@ -235,6 +269,9 @@ class WakeService :
         val newWords = WakeRegistry.wakeWords(newTargets)
         val wordsUnchanged = WakeRegistry.sameWakeSet(WakeRegistry.wakeWords(targets), newWords)
         targets = newTargets // ALWAYS refresh routing — the component for an unchanged word may have changed
+        // Keep oww's owned id in sync with the current set, so a re-id of the jarvis word can't desync the
+        // Vosk-suppression in [onWake]. (owwActive is fixed for the process — assets don't change at runtime.)
+        owwOwnedId = if (owwActive) OpenWakeWordDetector.ownedWakeId(newWords) else null
         if (wordsUnchanged) {
             DebugLog.log("wake words unchanged → routing refreshed, no grammar rebuild")
             return
@@ -267,10 +304,16 @@ class WakeService :
     // ---- match dispatch ----------------------------------------------------------------------------
 
     /**
-     * Called by the engine on its capture thread when a wake fires. We do nothing here but hop to the main
-     * thread — all orchestration runs single-threaded on main, so the capture thread only captures.
+     * Called by the engine on its capture thread when a wake fires. We do nothing here but decide whether this
+     * detector *owns* the fired word, then hop to the main thread — all orchestration runs single-threaded on
+     * main, so the capture thread only captures.
+     *
+     * The decision is the pure [WakeRouting.shouldRoute] (openWakeWord is the default for the word it owns;
+     * Vosk covers the rest + is the fallback when oww is inactive; shadows never route) — fed the two facts
+     * resolved at wake-set time ([owwActive], [owwOwnedId]) so it does no per-fire asset I/O.
      */
-    private fun onWake(id: String) {
+    private fun onWake(name: String, id: String, detail: String) {
+        if (!WakeRouting.shouldRoute(name, id, owwActive, owwOwnedId)) return
         main.post { dispatch(id) }
     }
 
