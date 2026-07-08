@@ -195,7 +195,7 @@ class WakeService :
             return
         }
         val generation = ++engineGeneration
-        engine = WakeMicEngine(
+        engine = WakeMicEngine.vosk(
             context = applicationContext,
             wakeWords = words,
             onUnavailable = { DebugLog.log("wake unavailable (model missing) — service idle") },
