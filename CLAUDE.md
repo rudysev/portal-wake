@@ -87,13 +87,13 @@ Android adapters; MicArbiter = the **mic-arbitration state machine** [Android-fr
 handoff/reclaim + call stand-down + foreign-mic contention and the single `reconcile()` that starts/pauses
 capture per the CaptureGate, driving the engine through a `CaptureController` seam and reading Android only
 via injected `Scheduler`/`AudioGate` seams; WakeNotification = the foreground-service notification; BootReceiver).
-`audio/` = `CallGate` = in-call gate [tested] — the **only** class still here. The whole **wake-detection
+`audio/` = `CallGate` = in-call gate [tested] — the **only** class still here. The **wake-detection
 core** moved to `portal-commons` so `portal-assistant` can reuse it for its foreground detector (see the
-shared-code note below): `WakeMicEngine` = recognition policy [pre-ready PcmRingBuffer + cooldown + recognizer]
-over the shared `PcmCaptureSession`; `WakeRecognizer` = Vosk boundary [warm-up + ready-gate];
-`WakeMatcher` = accuracy gate [tested]; `WakeWord`; `PcmRingBuffer` = pre-ready PCM FIFO [tested]. `WakeMicEngine`
-takes a `beforeStart` hook — portal-wake passes `MicLiberator.freeMic` (own the single mic slot), the assistant
-passes none.
+shared-code note below): `WakeMicEngine` = mic + capture over `PcmCaptureSession`, configured via
+`WakeMicConfig` + `WakeDetectors.vosk()`; `VoskWakeDetector` = Vosk recognition policy [pre-ready
+`PcmRingBuffer` + handoff cooldown + idle-reset]; `WakeRecognizer` = Vosk boundary [warm-up + ready-gate];
+`WakeMatcher` = accuracy gate [tested]; `WakeWord`. `WakeMicConfig.beforeMicAcquire` is the mic-slot hook —
+portal-wake passes `MicLiberator.freeMic`, the assistant passes none.
 `wake/` = the extensibility layer (WakeContract = the published plugin contract [tested], WakeSpec
 = builds a WakeWord from a plugin's named wake meta-data [tested], WakeRegistry = discovery, WakeTarget = word↔handler, HandoffRecovery =
 reclaim rule [tested], MicContentionDetector = foreign-recording-session detector [tested], CaptureGate =
@@ -104,9 +104,10 @@ intent (the **alexa** route). **Shared code lives in `portal-commons` (the sibli
 + device lifecycle, `PcmCaptureFormat`, `DebugLog` `files/debug.txt` log, **plus the pure wake-decision
 `WakeMatcher` [tested] + `WakeWord`**), plus the Android-library `com.portal:commons-android`
 (`com.portal.commons.audio.AudioRecordPcmDevice` the shared mic shell, **plus the Vosk detection core
-`WakeRecognizer` + `WakeMicEngine` + `PcmRingBuffer` [tested]** — `commons-android` carries the
-`vosk-android` dep) — both pulled in via Gradle composite build, and **both consumed by `portal-wake` AND
-`portal-assistant`** (so an edit to the shared wake classes changes both apps' detectors). The wake plugin contract
+`WakeRecognizer` + `WakeMicEngine` / `WakeMicConfig` / `WakeDetectors` / `VoskWakeDetector` [tested]** —
+`commons-android` carries the `vosk-android` dep) — both pulled in via Gradle composite build, and **both
+consumed by `portal-wake` AND `portal-assistant`** (so an edit to the shared wake classes changes both apps'
+detectors). The wake plugin contract
 (`WakeContract`) and its `WakeSpec` builder of the named wake meta-data are **this app's own** (`wake/`), not
 shared: the literal wire strings (the meta-data keys) are the contract, so plugins like portal-assistant mirror them.** Pure logic (WakeMatcher, CallGate,
 HandoffRecovery, CaptureGate, WakeSpec) is unit-tested; mic/service behavior is device-tested;

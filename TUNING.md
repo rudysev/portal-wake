@@ -32,9 +32,9 @@ These follow Vosk's own top recommendations and need no extra work:
    these use. → `WakeMatcher` (all thresholds + gates live here, unit-tested).
 5. **A built-in feedback loop.** Vosk's debugging advice is "look at real transcripts." Every fire logs
    the full decode with per-word confidence to `files/debug.txt` —
-   `wake detected → jarvis [hey(99) jarvis(100)]` — so thresholds and gates can be tuned from real
+   `wake detected (vosk) → jarvis [hey(99) jarvis(100)]` — so thresholds and gates can be tuned from real
    on-device data instead of guesswork.
-   → `WakeMicEngine`.
+   → `WakeMicEventHandler` / `WakeMicConfig.onWake`.
 
 ## What on-device testing showed (Portal+ "aloha", lgraph model, "hey jarvis")
 

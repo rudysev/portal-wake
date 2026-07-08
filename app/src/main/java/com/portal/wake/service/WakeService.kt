@@ -14,6 +14,9 @@ import android.os.Looper
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import com.portal.commons.DebugLog
+import com.portal.commons.audio.WakeDetectors
+import com.portal.commons.audio.WakeEvent
+import com.portal.commons.audio.WakeMicConfig
 import com.portal.commons.audio.WakeMicEngine
 import com.portal.wake.system.Falcon
 import com.portal.wake.system.MicLiberator
@@ -158,7 +161,7 @@ class WakeService :
         runCatching { audioManager.unregisterAudioRecordingCallback(recordingCallback) }
         arbiter.detach()
         runCatching { unregisterReceiver(packageReceiver) }
-        engine?.shutdown()
+        engine?.close()
         engine = null
         capturing = false
         // NB: deliberately do NOT DebugLog.close() here. DebugLog is a process-wide singleton shared with
@@ -197,24 +200,18 @@ class WakeService :
         val generation = ++engineGeneration
         engine = WakeMicEngine(
             context = applicationContext,
-            wakeWords = words,
-            onUnavailable = { DebugLog.log("wake unavailable (model missing) — service idle") },
-            onWake = ::onWake,
-            // A capture-open failure surfaces here; clear capturing so the call poll's reconcile() retries.
-            // Guarded by generation so a stale callback from an engine that a later buildEngine() replaced
-            // (on an empty↔non-empty transition) can't clear the live new session's flag.
-            onError = { message ->
-                main.post {
+            config = WakeMicConfig(
+                wakeWords = words,
+                detectors = listOf(WakeDetectors.vosk()),
+                onDetectorUnavailable = { DebugLog.log("wake unavailable (model missing) — service idle") },
+                onWake = ::onWake,
+                onError = { message ->
                     DebugLog.log("engine error: $message")
                     if (engineGeneration == generation) capturing = false
-                }
-            },
-            // Same guard for the session stopping (incl. a rare in-loop exception death, which doesn't fire
-            // onError). Harmless on a normal pause (flag already false; same generation).
-            onStopped = { main.post { if (engineGeneration == generation) capturing = false } },
-            // Free the Portal's own native wake services on each acquire so we own the single mic slot.
-            // (This is the Portal-specific hook the shared engine leaves injectable; the assistant passes none.)
-            beforeStart = { MicLiberator.freeMic(applicationContext) },
+                },
+                onStopped = { if (engineGeneration == generation) capturing = false },
+                beforeMicAcquire = { MicLiberator.freeMic(applicationContext) },
+            ),
         )
     }
 
@@ -246,7 +243,7 @@ class WakeService :
             // gate/contention — route it through the arbiter before relying on an empty wake set.
             newWords.isEmpty() -> {
                 DebugLog.log("wake set now empty → stopping engine")
-                engine?.shutdown()
+                engine?.close()
                 engine = null
                 capturing = false
             }
@@ -270,8 +267,8 @@ class WakeService :
      * Called by the engine on its capture thread when a wake fires. We do nothing here but hop to the main
      * thread — all orchestration runs single-threaded on main, so the capture thread only captures.
      */
-    private fun onWake(id: String) {
-        main.post { dispatch(id) }
+    private fun onWake(event: WakeEvent) {
+        main.post { dispatch(event.wakeId) }
     }
 
     private fun dispatch(id: String) {
