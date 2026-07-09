@@ -186,6 +186,10 @@ class WakeService :
 
             else -> {
                 DebugLog.log("wake set changed → rebuilding engine")
+                // pauseCapture clears [capturing] synchronously; the replaced engine's async onStopped is
+                // ignored (generation guard) and would otherwise leave [capturing] stuck true so reconcile
+                // never restarts the mic — e.g. when portal-assistant is installed right after portal-wake.
+                pauseCapture()
                 engine?.shutdown()
                 buildEngine()
                 arbiter.reconcile()
