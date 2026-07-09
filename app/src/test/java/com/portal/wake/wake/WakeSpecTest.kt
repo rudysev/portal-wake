@@ -18,7 +18,7 @@ class WakeSpecTest {
         id: String? = null,
         minConfidence: String? = null,
         onError: (String) -> Unit = {},
-    ) = WakeSpec.build(phrase, id, minConfidence, WakeWord.DEFAULT_MIN_CONF, onError)
+    ) = WakeSpec.build(phrase, id, minConfidence, WakeWord.DEFAULT_SCORE_THRESHOLD, onError)
 
     @Test fun buildsAndDerivesKeywordAndLead() {
         val w = build("hey jarvis", id = "jarvis", minConfidence = "0.6")!!
@@ -26,7 +26,7 @@ class WakeSpecTest {
         assertEquals("jarvis", w.keyword)
         assertEquals("hey", w.lead)
         assertEquals("hey jarvis", w.phrase)
-        assertEquals(0.6, w.minConf, 1e-9)
+        assertEquals(0.6, w.scoreThreshold, 1e-9)
     }
 
     @Test fun supportsAnArbitraryLead() {
@@ -57,13 +57,13 @@ class WakeSpecTest {
     }
 
     @Test fun absentMinConfidenceUsesDefault() {
-        assertEquals(WakeWord.DEFAULT_MIN_CONF, build("hey jarvis")!!.minConf, 1e-9)
-        assertEquals(WakeWord.DEFAULT_MIN_CONF, build("hey jarvis", minConfidence = "  ")!!.minConf, 1e-9)
+        assertEquals(WakeWord.DEFAULT_SCORE_THRESHOLD, build("hey jarvis")!!.scoreThreshold, 1e-9)
+        assertEquals(WakeWord.DEFAULT_SCORE_THRESHOLD, build("hey jarvis", minConfidence = "  ")!!.scoreThreshold, 1e-9)
     }
 
     @Test fun acceptsBoundaryConfidences() {
-        assertEquals(0.0, build("hey jarvis", minConfidence = "0.0")!!.minConf, 1e-9)
-        assertEquals(1.0, build("hey jarvis", minConfidence = "1.0")!!.minConf, 1e-9)
+        assertEquals(0.0, build("hey jarvis", minConfidence = "0.0")!!.scoreThreshold, 1e-9)
+        assertEquals(1.0, build("hey jarvis", minConfidence = "1.0")!!.scoreThreshold, 1e-9)
     }
 
     @Test fun malformedMinConfidenceFallsBackToDefaultWithWarning() {
@@ -72,7 +72,7 @@ class WakeSpecTest {
         for (bad in listOf("abc", "1.7", "-0.1", "NaN", "Infinity")) {
             val warnings = mutableListOf<String>()
             val w = build("hey jarvis", minConfidence = bad, onError = { warnings.add(it) })
-            assertEquals("dropped on '$bad'", WakeWord.DEFAULT_MIN_CONF, w!!.minConf, 1e-9)
+            assertEquals("dropped on '$bad'", WakeWord.DEFAULT_SCORE_THRESHOLD, w!!.scoreThreshold, 1e-9)
             assertTrue("no warning for '$bad'", warnings.single().contains(WakeContract.META_MIN_CONFIDENCE))
         }
     }

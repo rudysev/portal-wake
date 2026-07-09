@@ -13,6 +13,6 @@ class WakeRegistrySpecTest {
         assertEquals("jarvis", j.keyword)
         assertEquals("hey", j.lead)
         assertEquals("hey jarvis", j.phrase)
-        assertEquals(WakeWord.DEFAULT_MIN_CONF, j.minConf, 1e-9)
+        assertEquals(WakeWord.DEFAULT_SCORE_THRESHOLD, j.scoreThreshold, 1e-9)
     }
 }

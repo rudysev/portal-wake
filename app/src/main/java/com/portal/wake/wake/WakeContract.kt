@@ -62,7 +62,11 @@ object WakeContract {
     /** Optional meta-data key: the wake id reported on a match; defaults to the keyword when absent. */
     const val META_ID = "com.portal.wake.id"
 
-    /** Optional meta-data key: the detection threshold in [[MIN_CONFIDENCE], [MAX_CONFIDENCE]]; defaults to [WakeWord.DEFAULT_MIN_CONF]. */
+    /**
+     * Optional meta-data key: the openWakeWord **classifier score threshold** in
+     * [[MIN_SCORE_THRESHOLD], [MAX_SCORE_THRESHOLD]] (probability in [0, 1], not an ASR confidence).
+     * Defaults to [WakeWord.DEFAULT_SCORE_THRESHOLD]. Wire name is historical (`min_confidence`).
+     */
     const val META_MIN_CONFIDENCE = "com.portal.wake.min_confidence"
 
     /**
@@ -72,9 +76,17 @@ object WakeContract {
      */
     const val META_MODEL = "com.portal.wake.model"
 
-    /** Inclusive bounds a declared [META_MIN_CONFIDENCE] must fall within. */
-    const val MIN_CONFIDENCE = 0.0
-    const val MAX_CONFIDENCE = 1.0
+    /** Inclusive bounds for [META_MIN_CONFIDENCE] (classifier score threshold). */
+    const val MIN_SCORE_THRESHOLD = 0.0
+    const val MAX_SCORE_THRESHOLD = 1.0
+
+    /** @deprecated Use [MIN_SCORE_THRESHOLD]. */
+    @Deprecated("Renamed for clarity", ReplaceWith("MIN_SCORE_THRESHOLD"))
+    const val MIN_CONFIDENCE = MIN_SCORE_THRESHOLD
+
+    /** @deprecated Use [MAX_SCORE_THRESHOLD]. */
+    @Deprecated("Renamed for clarity", ReplaceWith("MAX_SCORE_THRESHOLD"))
+    const val MAX_CONFIDENCE = MAX_SCORE_THRESHOLD
 
     /** Extra (String) on [ACTION_WAKE]: the matched wake id (e.g. "jarvis"). */
     const val EXTRA_WAKE_ID = "com.portal.wake.extra.ID"

@@ -86,16 +86,17 @@ Ship the `.onnx` in your plugin's assets and point `com.portal.wake.model` at it
 `melspectrogram.onnx` and `embedding_model.onnx` stages are bundled in portal-wake — your model is only
 the final classifier head, exactly like the upstream `hey_jarvis_v0.1.onnx`.
 
-Tune detection with `com.portal.wake.min_confidence` (0.0–1.0, default 0.5): lower = more sensitive,
-higher = fewer false triggers. Every fire logs its score to `debug.txt`
-(`wake detected → jarvis [oww p=0.872]` at `/sdcard/Android/data/com.portal.wake/files/debug.txt`).
+Tune detection with `com.portal.wake.min_confidence` (classifier **score** in 0.0–1.0, default 0.5 — not an
+ASR confidence): lower = more sensitive, higher = fewer false triggers. Fires and near-misses log to
+`debug.txt` (`wake detected → jarvis [score=0.872]`, `oww near-miss jarvis score=0.412 threshold=0.500`).
 
 ### Meta-data reference
 
 - **`phrase`** (required) — the full spoken phrase. Portal-Wake takes the **last word as the keyword**
   and the **word before it as the lead** ("hey", "hi", …). A single word like `computer` registers with
   no required lead.
-- **`min_confidence`** (optional, default 0.5) — the openWakeWord **detection threshold** for this phrase.
+- **`min_confidence`** (optional, default 0.5) — openWakeWord **classifier score threshold** for this
+  phrase (probability in [0, 1]; wire name is historical).
 - **`model`** (required for custom phrases) — path to your `.onnx` classifier inside **your app's assets**
   (e.g. `oww/hey_computer.onnx`). Omit for built-in "hey jarvis" / "hey alexa" — those models ship in
   portal-wake.

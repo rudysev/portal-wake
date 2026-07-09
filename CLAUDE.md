@@ -33,7 +33,7 @@ API); **alexa** → the native Alexa client `falcon` (via its `LISTEN` intent). 
 - **Don't kill falcon; do suppress millennium.** `falcon` (Alexa client) never contends for our handset
   mic. `com.millennium` is the native "Hey Alexa" detector — `MicLiberator` kills it.
 - **No AGC / NoiseSuppressor on the capture stream** — plain `VOICE_RECOGNITION`, no effects.
-- **Detection threshold** is per wake word via `WakeWord.minConf` / `com.portal.wake.min_confidence`
+- **Classifier score threshold** is per wake word via `WakeWord.scoreThreshold` / `com.portal.wake.min_confidence` (openWakeWord probability in [0, 1], default 0.5 — not an ASR confidence).
   (default 0.5). Tune from on-device `debug.txt` logs (`wake detected → jarvis [oww p=…]`).
 - **Single mic slot.** Only one app records at a time.
 - **Headless start-up.** No icon means `setup.sh` must start the service once so `BootReceiver` gets

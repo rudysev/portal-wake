@@ -165,9 +165,10 @@ class WakeService :
         val newTargets = WakeRegistry.discover(this)
         val newWords = WakeRegistry.wakeWords(newTargets)
         val wordsUnchanged = WakeRegistry.sameWakeSet(WakeRegistry.wakeWords(targets), newWords)
+        val detectionUnchanged = WakeRegistry.sameDetectionConfig(this, targets, newTargets)
         targets = newTargets
-        if (wordsUnchanged) {
-            DebugLog.log("wake words unchanged → routing refreshed, no detector rebuild")
+        if (wordsUnchanged && detectionUnchanged) {
+            DebugLog.log("wake set unchanged → routing refreshed, no detector rebuild")
             return
         }
         when {

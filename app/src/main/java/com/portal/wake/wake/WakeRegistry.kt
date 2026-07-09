@@ -13,24 +13,9 @@ import com.portal.wake.system.Falcon
 /**
  * Builds the live set of [WakeTarget]s — **what to listen for and where to route it** — by *discovering*
  * handler apps at runtime, with a small built-in fallback so the app is useful before any plugin exists.
- *
- * Discovery (the extensible path): every app that responds to [WakeContract.ACTION_WAKE] and declares a
- * [WakeContract.META_PHRASE] (plus optional id/threshold/model) meta-data is a wake plugin. We build its
- * wake word ([WakeSpec]) and route matches to its component. Adding "hey X" is therefore a manifest entry
- * in *that* app — no change here.
- *
- * Fallback (defaults): when nothing is discovered for an id we fall back to [defaults] so the detector
- * has something to do out of the box. A discovered handler always overrides a default with the same id.
- *
- * Detection uses **openWakeWord** neural models (bundled for jarvis/alexa; plugin-supplied for custom words).
- * A discovered word is listenable only when an ONNX classifier exists for it — see [OwwHeadResolver].
  */
 object WakeRegistry {
 
-    /**
-     * Discover all wake targets: runtime-declared handlers first, then defaults for any id not covered.
-     * Returns at least the always-available defaults (currently "hey jarvis").
-     */
     fun discover(context: Context): List<WakeTarget> {
         val pm = context.packageManager
         val discovered = queryHandlers(pm)
@@ -41,17 +26,43 @@ object WakeRegistry {
         return all
     }
 
-    /** Convenience: just the wake words (what the detector needs), in discovery order. */
     fun wakeWords(targets: List<WakeTarget>): List<WakeWord> = targets.map { it.word }
 
-    /**
-     * True when two wake sets are equivalent (order-insensitive). The service uses this to skip a rebuild
-     * when a package change leaves the discovered wake set unchanged — i.e. the changed app isn't a wake
-     * plugin (or its declared wake word didn't change). Pure (no Android), so it is unit-tested.
-     */
     fun sameWakeSet(a: List<WakeWord>, b: List<WakeWord>): Boolean = a.toSet() == b.toSet()
 
-    // ---- runtime discovery -------------------------------------------------------------------------
+    /**
+     * Fingerprint of which ONNX phrase classifiers the detector should load — wake id, model asset path,
+     * plugin package revision, and score threshold. Used to rebuild the detector when a plugin APK is
+     * updated even though the declared phrase/threshold are unchanged.
+     */
+    data class DetectionBinding(
+        val wakeId: String,
+        val modelAsset: String?,
+        val sourcePackage: String?,
+        val pluginRevision: Long,
+        val scoreThreshold: Double,
+    )
+
+    fun detectionBindings(context: Context, targets: List<WakeTarget>): Set<DetectionBinding> =
+        targets.map { target ->
+            val revision = target.source?.let { pluginRevision(context, it) } ?: 0L
+            DetectionBinding(
+                wakeId = target.word.id,
+                modelAsset = target.modelAsset,
+                sourcePackage = target.source,
+                pluginRevision = revision,
+                scoreThreshold = target.word.scoreThreshold,
+            )
+        }.toSet()
+
+    fun sameDetectionConfig(context: Context, a: List<WakeTarget>, b: List<WakeTarget>): Boolean =
+        detectionBindings(context, a) == detectionBindings(context, b)
+
+    private fun pluginRevision(context: Context, packageName: String): Long = runCatching {
+        val pm = context.packageManager
+        @Suppress("DEPRECATION")
+        pm.getPackageInfo(packageName, 0).lastUpdateTime
+    }.getOrDefault(0L)
 
     private fun queryHandlers(pm: PackageManager): List<WakeTarget> = runCatching {
         val intent = Intent(WakeContract.ACTION_WAKE)
@@ -68,7 +79,7 @@ object WakeRegistry {
                     phrase = phrase,
                     id = meta.text(WakeContract.META_ID),
                     minConfidence = meta.text(WakeContract.META_MIN_CONFIDENCE),
-                    defaultMinConf = WakeWord.DEFAULT_MIN_CONF,
+                    defaultScoreThreshold = WakeWord.DEFAULT_SCORE_THRESHOLD,
                     onProblem = { reason -> DebugLog.log("registry: wake plugin ${component.flattenToShortString()}: $reason") },
                 ) ?: continue
                 warnIfMisdeclared(component, phrase, word, meta.text(WakeContract.META_MODEL))
@@ -111,17 +122,15 @@ object WakeRegistry {
         }
     }
 
-    // ---- built-in defaults -------------------------------------------------------------------------
-
     internal val BUILTIN_JARVIS =
-        WakeWord.fromPhrase("hey jarvis", id = "jarvis", minConf = WakeWord.DEFAULT_MIN_CONF)!!
+        WakeWord.fromPhrase("hey jarvis", id = "jarvis", scoreThreshold = WakeWord.DEFAULT_SCORE_THRESHOLD)!!
 
     private fun defaults(pm: PackageManager): List<WakeTarget> = buildList {
         add(WakeTarget(BUILTIN_JARVIS, component = null, source = null))
         if (isInstalled(pm, Falcon.PACKAGE)) {
             add(
                 WakeTarget(
-                    WakeWord.fromPhrase("hey alexa", id = "alexa", minConf = WakeWord.DEFAULT_MIN_CONF)!!,
+                    WakeWord.fromPhrase("hey alexa", id = "alexa", scoreThreshold = WakeWord.DEFAULT_SCORE_THRESHOLD)!!,
                     component = null,
                     source = null,
                 ),
