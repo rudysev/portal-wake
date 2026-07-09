@@ -4,6 +4,10 @@ Replay labelled WAV clips through the **on-device** `OpenWakeWordDetector` (file
 score recall / false-accepts. Use this to stress-test and tune `com.portal.wake.min_confidence` /
 `WakeWord.scoreThreshold` before shipping.
 
+**Branch:** `feature/oww-benchmark` in **portal-wake** and **portal-commons** (not on `feature/openwakeword`).
+The commons branch adds `WakeDetector.Events.onScore` for per-clip peak tracking; the wake branch adds
+this harness, corpus, and scripts.
+
 Synthetic TTS (macOS `say`) measures **model behaviour**, not far-field Portal acoustics. Validate tuning
 on a real gen1 Portal with live speech after picking a threshold here.
 
