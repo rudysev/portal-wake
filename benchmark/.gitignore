@@ -1,0 +1,5 @@
+# Generated run artifacts — reproducible from run_bench.sh / gen_corpus.sh
+last_run.log
+full_run.log
+results*.csv
+report*.txt
