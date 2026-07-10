@@ -18,6 +18,7 @@ import com.portal.commons.audio.WakeDetectors
 import com.portal.commons.audio.WakeEvent
 import com.portal.commons.audio.WakeMicConfig
 import com.portal.commons.audio.WakeMicEngine
+import com.portal.commons.audio.WakeRouting
 import com.portal.wake.system.Falcon
 import com.portal.wake.system.MicLiberator
 import com.portal.wake.wake.OwwHeadResolver
@@ -28,8 +29,9 @@ import java.io.File
 
 /**
  * The one always-on component. A `START_STICKY` foreground service (type `microphone`) that hosts the
- * [WakeMicEngine] + openWakeWord detector for the life of the device, with **no UI and no launcher** —
- * started on boot by [BootReceiver] (and once at install time by `setup.sh`).
+ * [WakeMicEngine] with openWakeWord (primary) and Vosk (parallel / shadow for oWW-owned words) for the
+ * life of the device, with **no UI and no launcher** — started on boot by [BootReceiver] (and once at
+ * install time by `setup.sh`).
  */
 class WakeService :
     Service(),
@@ -62,6 +64,8 @@ class WakeService :
 
     private var engine: WakeMicEngine? = null
     private var targets: List<WakeTarget> = emptyList()
+    /** Wake ids covered by openWakeWord heads — Vosk fires of these are shadows only. */
+    private var owwOwnedIds: Set<String> = emptySet()
     private var started = false
     private var capturing = false
     private var engineGeneration = 0
@@ -133,19 +137,33 @@ class WakeService :
 
     private fun buildEngine() {
         targets = WakeRegistry.discover(this)
-        val heads = OwwHeadResolver.resolve(applicationContext, targets)
-        if (heads.isEmpty()) {
-            DebugLog.log("no wake words with oww models to listen for")
+        val words = WakeRegistry.wakeWords(targets)
+        if (words.isEmpty()) {
+            DebugLog.log("no wake words to listen for")
             engine = null
+            owwOwnedIds = emptySet()
             return
         }
-        val words = WakeRegistry.wakeWords(targets)
+        val heads = OwwHeadResolver.resolve(applicationContext, targets)
+        owwOwnedIds = heads.map { it.wakeId }.toSet()
+        val factories = buildList {
+            add(WakeDetectors.vosk())
+            if (heads.isNotEmpty()) {
+                DebugLog.log(
+                    "detectors: oww (primary for ${owwOwnedIds.joinToString()}) + vosk " +
+                        "(shadow for owned; routes other words)",
+                )
+                add(WakeDetectors.oww(heads))
+            } else {
+                DebugLog.log("detectors: vosk only (no oww models for discovered words)")
+            }
+        }
         val generation = ++engineGeneration
         engine = WakeMicEngine(
             context = applicationContext,
             config = WakeMicConfig(
                 wakeWords = words,
-                detectors = listOf(WakeDetectors.oww(heads)),
+                detectors = factories,
                 onDetectorUnavailable = { id -> DebugLog.log("wake unavailable ($id)") },
                 onWake = ::onWake,
                 onError = { message ->
@@ -168,13 +186,14 @@ class WakeService :
         val newWords = WakeRegistry.wakeWords(newTargets)
         val wordsUnchanged = WakeRegistry.sameWakeSet(WakeRegistry.wakeWords(targets), newWords)
         targets = newTargets
+        owwOwnedIds = OwwHeadResolver.resolve(applicationContext, newTargets).map { it.wakeId }.toSet()
         if (wordsUnchanged) {
             DebugLog.log("wake words unchanged → routing refreshed, no detector rebuild")
             return
         }
         when {
-            OwwHeadResolver.resolve(applicationContext, newTargets).isEmpty() -> {
-                DebugLog.log("wake set now has no detectable words → stopping engine")
+            newWords.isEmpty() -> {
+                DebugLog.log("wake set now empty → stopping engine")
                 engine?.close()
                 engine = null
                 capturing = false
@@ -196,6 +215,7 @@ class WakeService :
     }
 
     private fun onWake(event: WakeEvent) {
+        if (!WakeRouting.shouldRoute(event.detectorId, event.wakeId, owwOwnedIds)) return
         main.post { dispatch(event.wakeId) }
     }
 

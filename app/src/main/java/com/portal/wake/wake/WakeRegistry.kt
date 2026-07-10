@@ -22,8 +22,9 @@ import com.portal.wake.system.Falcon
  * Fallback (defaults): when nothing is discovered for an id we fall back to [defaults] so the detector
  * has something to do out of the box. A discovered handler always overrides a default with the same id.
  *
- * Detection uses **openWakeWord** neural models (bundled for jarvis/alexa; plugin-supplied for custom words).
- * A discovered word is listenable only when an ONNX classifier exists for it — see [OwwHeadResolver].
+ * Detection uses **openWakeWord** as the primary neural path (bundled for jarvis/alexa; plugin-supplied for
+ * custom words) with **Vosk** in parallel. A discovered word is oWW-listenable when an ONNX classifier exists
+ * for it — see [OwwHeadResolver]; words without an oWW model still route via Vosk.
  */
 object WakeRegistry {
 

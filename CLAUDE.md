@@ -7,7 +7,8 @@ fast version.
 
 A **headless, always-on wake-word listener** for the Meta Portal+ (model "aloha", Android 9 / API 28),
 package `com.portal.wake`. No launcher icon, no Activity, no UI. It boots a foreground service, owns
-the mic, runs an on-device **openWakeWord** neural detector, and on a wake match hands the mic off to
+the mic, runs an on-device **openWakeWord** neural detector (primary) with **Vosk** in parallel as a
+shadow for oWW-owned words, and on a wake match hands the mic off to
 another app. Wake detection is small and standalone, and wake words are **discovered at runtime** instead of
 hard-coded.
 
@@ -35,6 +36,8 @@ API); **alexa** → the native Alexa client `falcon` (via its `LISTEN` intent). 
 - **No AGC / NoiseSuppressor on the capture stream** — plain `VOICE_RECOGNITION`, no effects.
 - **Detection threshold** is per wake word via `WakeWord.scoreThreshold` / `com.portal.wake.min_confidence`
   (default 0.5). Tune from on-device `debug.txt` logs (`wake detected → jarvis [oww p=…]`).
+- **oWW is primary; Vosk is parallel.** Handoff uses `WakeRouting` — oWW always routes; Vosk shadows
+  oWW-owned ids and still routes words without an oWW model. Both log to `debug.txt`.
 - **Single mic slot.** Only one app records at a time.
 - **Headless start-up.** No icon means `setup.sh` must start the service once so `BootReceiver` gets
   `BOOT_COMPLETED` thereafter.
@@ -49,8 +52,8 @@ MicContentionDetector, CaptureGate.
 `system/` = MicLiberator, Falcon.
 
 **Shared code in `portal-commons`:** `PcmCaptureSession`, `PcmCaptureFormat`, `DebugLog`, `WakeWord`,
-`OpenWakeWordDetector`, `WakeMicEngine`, `WakeDetector`, `FireCooldown` — consumed by portal-wake and
-portal-assistant.
+`OpenWakeWordDetector`, `VoskWakeDetector`, `WakeRouting`, `WakeMicEngine`, `WakeDetector`, `FireCooldown` —
+consumed by portal-wake and portal-assistant.
 
 ## Build / deploy
 
@@ -61,4 +64,5 @@ git submodule update --init --recursive
 npx -y @meta-quest/hzdb adb shell "cat /sdcard/Android/data/com.portal.wake/files/debug.txt"
 ```
 
-ONNX models ship in `portal-commons/commons-android/src/main/assets/oww/` — no separate download.
+ONNX models ship in `portal-commons/commons-android/src/main/assets/oww/` — no separate download for oWW.
+Vosk still needs `app/src/main/assets/model-en-us/` (gitignored) — see that folder's README.

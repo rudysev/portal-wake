@@ -1,7 +1,8 @@
 # Portal-Wake
 
 A tiny, headless, always-on **wake-word listener** for the Meta Portal+ (1st gen, model "aloha",
-Android 9 / API 28). It owns the microphone, runs an on-device **openWakeWord** neural detector, and —
+Android 9 / API 28). It owns the microphone, runs an on-device **openWakeWord** neural detector (primary)
+with **Vosk** in parallel for coverage and benchmarking, and —
 when it hears a wake phrase — hands the mic off to whichever app should take the turn. It has **no launcher
 icon and no UI**: it starts on boot and lives entirely in the background.
 
@@ -39,9 +40,11 @@ Wake words are **discovered at runtime**, not hard-coded. Any installed app beco
 declaring an exported receiver that responds to `com.portal.wake.action.WAKE` and carries its wake word
 as **named meta-data** — one field per setting.
 
-Portal-Wake detects wake phrases with **openWakeWord** — a per-phrase neural classifier (`.onnx`), not a
-general speech recognizer. Built-in **"hey jarvis"** and **"hey alexa"** ship with bundled models; any
-**custom** phrase needs a model you train and ship inside your plugin APK.
+Portal-Wake detects wake phrases with **openWakeWord** — a per-phrase neural classifier (`.onnx`) — as the
+**primary** detector. **Vosk** runs in parallel: it shadows oWW-owned words in `debug.txt` (no double
+handoff) and still routes custom words that have no ONNX model. Built-in **"hey jarvis"** and **"hey alexa"**
+ship with bundled oWW models; any **custom** phrase needs a model you train and ship inside your plugin APK
+(or it falls back to Vosk grammar decode).
 
 Example — an app that adds "hey jarvis":
 
@@ -114,7 +117,8 @@ cd portal-wake
 ```
 
 Building needs a JDK (17 or 21) and the Android SDK. The openWakeWord models are bundled in
-`portal-commons` — no separate download step:
+`portal-commons`. For the parallel Vosk detector, download the English model once into
+`app/src/main/assets/model-en-us/` (see that folder's README):
 
 ```bash
 ./gradlew assembleDebug
