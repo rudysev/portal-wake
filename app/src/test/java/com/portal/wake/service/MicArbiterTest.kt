@@ -184,6 +184,19 @@ class MicArbiterTest {
         assertTrue(ctl.isCapturing)
     }
 
+    /**
+     * Documents the contract WakeService relies on after an engine rebuild: if [isCapturing] stays true
+     * (e.g. stale flag after close+generation bump), [reconcile] will not call [startCapture] again.
+     */
+    @Test
+    fun reconcile_skipsStartWhileAlreadyCapturing() {
+        arbiter.start()
+        assertTrue(ctl.isCapturing)
+        val starts = ctl.startCount
+        arbiter.reconcile()
+        assertEquals("stuck capturing=true must not re-start", starts, ctl.startCount)
+    }
+
     @Test
     fun detach_cancelsPostsAndResetsSoReuseStartsClean() {
         arbiter.start()

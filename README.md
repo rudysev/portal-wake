@@ -50,7 +50,7 @@ Example — an app that adds "hey jarvis":
     <intent-filter>
         <action android:name="com.portal.wake.action.WAKE" />
     </intent-filter>
-    <meta-data android:name="com.portal.wake.phrase"         android:value="hey jarvis" />
+    <meta-data android:name="com.portal.wake.phrase" android:value="hey jarvis" />
     <meta-data android:name="com.portal.wake.min_confidence" android:value="0.5" />
     <!-- optional: com.portal.wake.id  (defaults to the keyword, here "jarvis") -->
 </receiver>
@@ -63,9 +63,9 @@ Example — a **custom** wake word (requires your own model):
     <intent-filter>
         <action android:name="com.portal.wake.action.WAKE" />
     </intent-filter>
-    <meta-data android:name="com.portal.wake.phrase"         android:value="hey computer" />
+    <meta-data android:name="com.portal.wake.phrase" android:value="hey computer" />
     <meta-data android:name="com.portal.wake.min_confidence" android:value="0.5" />
-    <meta-data android:name="com.portal.wake.model"         android:value="oww/hey_computer.onnx" />
+    <meta-data android:name="com.portal.wake.model" android:value="oww/hey_computer.onnx" />
 </receiver>
 ```
 

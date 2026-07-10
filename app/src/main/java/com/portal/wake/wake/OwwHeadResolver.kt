@@ -23,7 +23,7 @@ object OwwHeadResolver {
                 DebugLog.log("registry: no oww model for '${word.id}' (${word.phrase}) — not detectable")
                 continue
             }
-                    val threshold = word.scoreThreshold.toFloat().coerceIn(0f, 1f)
+            val threshold = word.scoreThreshold.toFloat().coerceIn(0f, 1f)
             add(OpenWakeWordDetector.PhraseClassifierConfig(word.id, bytes, threshold))
         }
     }
