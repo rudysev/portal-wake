@@ -15,9 +15,9 @@ package com.portal.wake.wake
  *     <intent-filter>
  *         <action android:name="com.portal.wake.action.WAKE" />
  *     </intent-filter>
- *     <meta-data android:name="com.portal.wake.phrase"         android:value="hey jarvis" />
- *     <meta-data android:name="com.portal.wake.min_confidence" android:value="0.55" />
- *     <meta-data android:name="com.portal.wake.model"         android:value="oww/hey_jarvis.onnx" />
+ *     <meta-data android:name="com.portal.wake.phrase" android:value="hey jarvis" />
+ *     <meta-data android:name="com.portal.wake.min_confidence" android:value="0.5" />
+ *     <meta-data android:name="com.portal.wake.model" android:value="oww/hey_jarvis.onnx" />
  *     <!-- optional: com.portal.wake.id (defaults to the keyword, here "jarvis") -->
  * </receiver>
  * ```
@@ -27,7 +27,7 @@ package com.portal.wake.wake
  * several declares several receivers (discovery reads each independently).
  * The meta-data **keys** must be string literals (XML cannot reference these constants); use these
  * constants in the *code* that reads them. The **values** are written as plain text, but note Android
- * type-infers `android:value` — a numeric `min_confidence` like `0.55` is stored as a float — so the
+ * type-infers `android:value` — a numeric `min_confidence` like `0.5` is stored as a float — so the
  * reader takes each value type-agnostically (see WakeRegistry). Declare values with `android:value`, not
  * `android:resource` (a resource reference reads back as its numeric id, not the referenced string). A
  * plugin does **not** need to depend on

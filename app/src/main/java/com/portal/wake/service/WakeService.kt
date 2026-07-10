@@ -23,6 +23,8 @@ import com.portal.wake.system.MicLiberator
 import com.portal.wake.wake.OwwHeadResolver
 import com.portal.wake.wake.WakeContract
 import com.portal.wake.wake.WakeRegistry
+import com.portal.wake.wake.WakeSetChange
+import com.portal.wake.wake.WakeSetEngineAction
 import com.portal.wake.wake.WakeTarget
 import java.io.File
 
@@ -165,30 +167,38 @@ class WakeService :
 
     private fun applyWakeSetChange() {
         val newTargets = WakeRegistry.discover(this)
-        val newWords = WakeRegistry.wakeWords(newTargets)
-        val wordsUnchanged = WakeRegistry.sameWakeSet(WakeRegistry.wakeWords(targets), newWords)
-        targets = newTargets
-        if (wordsUnchanged) {
-            DebugLog.log("wake words unchanged → routing refreshed, no detector rebuild")
-            return
-        }
-        when {
-            OwwHeadResolver.resolve(applicationContext, newTargets).isEmpty() -> {
+        val detectableUnchanged = WakeRegistry.sameDetectableSet(targets, newTargets)
+        targets = newTargets // ALWAYS refresh routing — the component for an unchanged word may have changed
+        val heads = if (detectableUnchanged) emptyList() else OwwHeadResolver.resolve(applicationContext, newTargets)
+        when (
+            WakeSetChange.decide(
+                detectableUnchanged = detectableUnchanged,
+                hasDetectableHeads = heads.isNotEmpty(),
+                hasEngine = engine != null,
+            )
+        ) {
+            WakeSetEngineAction.ROUTING_ONLY ->
+                DebugLog.log("wake words unchanged → routing refreshed, no detector rebuild")
+
+            WakeSetEngineAction.STOP -> {
                 DebugLog.log("wake set now has no detectable words → stopping engine")
                 engine?.close()
                 engine = null
                 capturing = false
             }
 
-            engine == null -> {
+            WakeSetEngineAction.BUILD -> {
                 DebugLog.log("wake set now non-empty → building engine")
                 buildEngine()
                 arbiter.reconcile()
             }
 
-            else -> {
+            WakeSetEngineAction.REBUILD -> {
                 DebugLog.log("wake set changed → rebuilding engine")
                 engine?.close()
+                // close()'s onStopped is ignored once buildEngine bumps engineGeneration, so clear
+                // capturing here — otherwise reconcile() sees isCapturing and never restarts the mic.
+                capturing = false
                 buildEngine()
                 arbiter.reconcile()
             }

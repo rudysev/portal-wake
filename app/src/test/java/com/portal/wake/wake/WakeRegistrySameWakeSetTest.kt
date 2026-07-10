@@ -75,4 +75,50 @@ class WakeRegistrySameWakeSetTest {
         )
         assertTrue(WakeRegistry.sameWakeSet(builtin, fromPluginSpec))
     }
+
+    private fun target(
+        id: String,
+        modelAsset: String? = null,
+        scoreThreshold: Double = 0.5,
+    ) = WakeTarget(
+        word = word(id, scoreThreshold),
+        component = null,
+        source = if (modelAsset != null) "com.example.plugin" else null,
+        modelAsset = modelAsset,
+    )
+
+    @Test fun sameDetectableSet_ignoresRoutingOnly() {
+        val builtin = listOf(target("jarvis"))
+        val withHandler = listOf(
+            WakeTarget(
+                word = word("jarvis"),
+                component = null, // ComponentName needs Android; null still differs by source
+                source = "com.portal.assistant",
+                modelAsset = null,
+            ),
+        )
+        assertTrue(WakeRegistry.sameDetectableSet(builtin, withHandler))
+    }
+
+    @Test fun sameDetectableSet_modelAssetChangeRequiresReload() {
+        val before = listOf(target("custom", modelAsset = "oww/old.onnx"))
+        val after = listOf(target("custom", modelAsset = "oww/new.onnx"))
+        assertTrue(WakeRegistry.sameWakeSet(WakeRegistry.wakeWords(before), WakeRegistry.wakeWords(after)))
+        assertFalse(
+            "plugin ONNX path change must not be treated as detectable-unchanged",
+            WakeRegistry.sameDetectableSet(before, after),
+        )
+    }
+
+    @Test fun sameDetectableSet_addingModelAssetRequiresReload() {
+        val before = listOf(target("jarvis", modelAsset = null))
+        val after = listOf(target("jarvis", modelAsset = "oww/hey_jarvis_v0.1.onnx"))
+        assertFalse(WakeRegistry.sameDetectableSet(before, after))
+    }
+
+    @Test fun sameDetectableSet_identicalModelsMatch() {
+        val a = listOf(target("jarvis"), target("custom", modelAsset = "models/x.onnx"))
+        val b = listOf(target("custom", modelAsset = "models/x.onnx"), target("jarvis"))
+        assertTrue(WakeRegistry.sameDetectableSet(a, b))
+    }
 }

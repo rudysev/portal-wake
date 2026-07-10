@@ -51,6 +51,21 @@ object WakeRegistry {
      */
     fun sameWakeSet(a: List<WakeWord>, b: List<WakeWord>): Boolean = a.toSet() == b.toSet()
 
+    /**
+     * True when two target lists are equivalent for **detection** (order-insensitive): same [WakeWord]s
+     * and the same per-id [WakeTarget.modelAsset]. Routing ([WakeTarget.component] / [WakeTarget.source])
+     * is ignored — the service refreshes `targets` for routing even when this returns true.
+     *
+     * A plugin APK update that only changes the ONNX path (or adds/removes [WakeContract.META_MODEL])
+     * must return false so the engine reloads classifiers.
+     */
+    fun sameDetectableSet(a: List<WakeTarget>, b: List<WakeTarget>): Boolean {
+        if (!sameWakeSet(wakeWords(a), wakeWords(b))) return false
+        val modelsA = a.associate { it.word.id to it.modelAsset }
+        val modelsB = b.associate { it.word.id to it.modelAsset }
+        return modelsA == modelsB
+    }
+
     // ---- runtime discovery -------------------------------------------------------------------------
 
     private fun queryHandlers(pm: PackageManager): List<WakeTarget> = runCatching {
