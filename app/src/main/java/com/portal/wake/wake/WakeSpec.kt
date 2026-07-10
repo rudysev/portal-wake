@@ -53,7 +53,7 @@ object WakeSpec {
                 minConf = defaultMinConf
             }
         }
-        val word = WakeWord.fromPhrase(phrase, id, minConf) ?: return null
+        val word = WakeWord.fromPhrase(phrase, id, minConf = minConf, scoreThreshold = minConf) ?: return null
         // A provided id that isn't the derived keyword is usually a typo (e.g. phrase="hey vega",
         // id="jarvis"). It still builds (an id may legitimately differ), but flag it — the id is what's
         // reported on a match and what overrides a built-in default.

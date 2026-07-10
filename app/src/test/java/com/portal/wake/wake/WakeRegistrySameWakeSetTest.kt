@@ -8,12 +8,18 @@ import org.junit.Test
 /**
  * Tests [WakeRegistry.sameWakeSet] — the filter that lets the service ignore a package change that doesn't
  * actually move the wake set. A reinstall of a wake plugin that keeps the same keywords (or any unrelated
- * app) must compare equal so no model reload / grammar swap happens; a genuine add/remove/change must not.
+ * app) must compare equal so no detector reload happens; a genuine add/remove/change must not.
  */
 class WakeRegistrySameWakeSetTest {
 
     private fun word(id: String, scoreThreshold: Double = 0.5) =
-        WakeWord(id, keyword = id, lead = "hey", scoreThreshold = scoreThreshold)
+        WakeWord(
+            id,
+            keyword = id,
+            lead = "hey",
+            minConf = WakeWord.DEFAULT_MIN_CONF,
+            scoreThreshold = scoreThreshold,
+        )
 
     @Test fun identicalSetsAreEqual() {
         val a = listOf(word("jarvis"), word("alexa"))
@@ -55,8 +61,8 @@ class WakeRegistrySameWakeSetTest {
     }
 
     /**
-     * Regression guard for the routing bug: the built-in jarvis default and the assistant's manifest spec
-     * `jarvis;hey jarvis;jarvis;0.6` are an IDENTICAL [WakeWord] (STRICT_MIN_CONF == 0.60), so installing or
+     * Regression guard for the routing bug: the built-in jarvis default and the assistant's manifest
+     * "hey jarvis" / id jarvis / min_confidence 0.5 are an IDENTICAL [WakeWord], so installing or
      * uninstalling the assistant does NOT change the wake-word set — only the routing (component null ↔ the
      * handler). sameWakeSet therefore returns true across that transition, which is exactly why
      * WakeService.applyWakeSetChange must refresh `targets` independently of the word comparison. If this
