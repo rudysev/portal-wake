@@ -53,7 +53,6 @@ object WakeSpec {
                 minConf = defaultMinConf
             }
         }
-        // phrase is non-blank (guarded above), so fromPhrase always yields a usable word.
         val word = WakeWord.fromPhrase(phrase, id, minConf) ?: return null
         // A provided id that isn't the derived keyword is usually a typo (e.g. phrase="hey vega",
         // id="jarvis"). It still builds (an id may legitimately differ), but flag it — the id is what's
