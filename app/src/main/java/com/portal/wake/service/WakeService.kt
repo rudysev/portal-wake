@@ -14,6 +14,7 @@ import android.os.Looper
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import com.portal.commons.DebugLog
+import com.portal.commons.audio.OpenWakeWordDetector
 import com.portal.commons.audio.WakeDetectors
 import com.portal.commons.audio.WakeEvent
 import com.portal.commons.audio.WakeMicConfig
@@ -22,6 +23,7 @@ import com.portal.wake.system.Falcon
 import com.portal.wake.system.MicLiberator
 import com.portal.wake.wake.WakeContract
 import com.portal.wake.wake.WakeRegistry
+import com.portal.wake.wake.WakeRouting
 import com.portal.wake.wake.WakeTarget
 import java.io.File
 
@@ -97,6 +99,10 @@ class WakeService :
     private var engine: WakeMicEngine? = null
     private var targets: List<WakeTarget> = emptyList()
     private var started = false
+
+    // Routing state for the oww-is-default split, resolved from the wake set (not per-fire — see [onWake]).
+    private var owwActive = false
+    private var owwOwnedId: String? = null
 
     // Whether the current engine is started (reflects what we last applied). The arbiter drives this via
     // startCapture/pauseCapture, but onError/onStopped also clear it out-of-band (guarded by engineGeneration)
@@ -197,13 +203,15 @@ class WakeService :
             engine = null
             return
         }
+        owwActive = OpenWakeWordDetector.assetsPresent(applicationContext)
+        owwOwnedId = if (owwActive) OpenWakeWordDetector.ownedWakeId(words) else null
         val generation = ++engineGeneration
         engine = WakeMicEngine(
             context = applicationContext,
             config = WakeMicConfig(
                 wakeWords = words,
-                detectors = listOf(WakeDetectors.vosk()),
-                onDetectorUnavailable = { DebugLog.log("wake unavailable (model missing) — service idle") },
+                detectors = detectorFactories(),
+                onDetectorUnavailable = { id -> DebugLog.log("wake unavailable ($id)") },
                 onWake = ::onWake,
                 onError = { message ->
                     DebugLog.log("engine error: $message")
@@ -213,6 +221,20 @@ class WakeService :
                 beforeMicAcquire = { MicLiberator.freeMic(applicationContext) },
             ),
         )
+    }
+
+    /**
+     * The detector set. **openWakeWord is the default** for "hey jarvis" when its bundled assets are present.
+     * **Vosk always runs**: it routes every other discovered word and is the jarvis fallback when oww is absent.
+     */
+    private fun detectorFactories() = buildList {
+        add(WakeDetectors.vosk())
+        if (OpenWakeWordDetector.assetsPresent(applicationContext)) {
+            DebugLog.log("openWakeWord assets present → oww is the DEFAULT detector for jarvis (Vosk routes other words)")
+            add(WakeDetectors.oww())
+        } else {
+            DebugLog.log("openWakeWord assets absent → Vosk routes all words")
+        }
     }
 
     /** Coalesce a burst of package broadcasts (one reinstall = 2–3) into a single debounced refresh. */
@@ -232,6 +254,7 @@ class WakeService :
         val newWords = WakeRegistry.wakeWords(newTargets)
         val wordsUnchanged = WakeRegistry.sameWakeSet(WakeRegistry.wakeWords(targets), newWords)
         targets = newTargets // ALWAYS refresh routing — the component for an unchanged word may have changed
+        owwOwnedId = if (owwActive) OpenWakeWordDetector.ownedWakeId(newWords) else null
         if (wordsUnchanged) {
             DebugLog.log("wake words unchanged → routing refreshed, no grammar rebuild")
             return
@@ -264,10 +287,11 @@ class WakeService :
     // ---- match dispatch ----------------------------------------------------------------------------
 
     /**
-     * Called by the engine on its capture thread when a wake fires. We do nothing here but hop to the main
-     * thread — all orchestration runs single-threaded on main, so the capture thread only captures.
+     * Called by the engine on its capture thread when a wake fires. Routes via [WakeRouting] so oww-owned
+     * jarvis fires don't double-handoff through Vosk, then hops to the main thread for dispatch.
      */
     private fun onWake(event: WakeEvent) {
+        if (!WakeRouting.shouldRoute(event.detectorId, event.wakeId, owwActive, owwOwnedId)) return
         main.post { dispatch(event.wakeId) }
     }
 
