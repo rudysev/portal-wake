@@ -14,6 +14,7 @@ android {
     targetSdk = 29       // Android 10 — Portal-era behavior; background-started FG mic still allowed
     versionCode = 4
     versionName = "2.2"
+    testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
   buildTypes {
@@ -41,4 +42,6 @@ dependencies {
   implementation(libs.vosk.android)
 
   testImplementation(libs.junit)
+  androidTestImplementation("androidx.test.ext:junit:1.1.5")
+  androidTestImplementation("androidx.test:runner:1.5.2")
 }
