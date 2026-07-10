@@ -27,8 +27,6 @@ android {
     targetCompatibility = JavaVersion.VERSION_11
   }
   testOptions {
-    // Use the bundled org.json (testImplementation) instead of android.jar's throwing stubs, so the
-    // Vosk-JSON parser can be exercised in plain JVM unit tests.
     unitTests.isReturnDefaultValues = true
   }
 }
@@ -37,11 +35,8 @@ dependencies {
   implementation(libs.androidx.core.ktx)
   // Shared utilities (DebugLog/PcmCaptureSession/PcmCaptureFormat); composite-build substituted from ./commons.
   implementation("com.portal:commons")
-  // Shared Android shells (AudioRecordPcmDevice); composite-build substituted from ./commons-android.
+  // Shared Android shells (AudioRecordPcmDevice + openWakeWord); composite-build substituted from ./commons-android.
   implementation("com.portal:commons-android")
-  // On-device wake-word recognition — free, keyless, offline, no Google Mobile Services.
-  implementation(libs.vosk.android)
 
   testImplementation(libs.junit)
-  testImplementation(libs.json)
 }
