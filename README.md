@@ -1,8 +1,8 @@
 # Portal-Wake
 
 A tiny, headless, always-on **wake-word listener** for the Meta Portal+ (1st gen, model "aloha",
-Android 9 / API 28). It owns the microphone, runs an on-device speech recognizer, and — when it
-hears a wake phrase — hands the mic off to whichever app should take the turn. It has **no launcher
+Android 9 / API 28). It owns the microphone, runs an on-device **openWakeWord** neural detector, and —
+when it hears a wake phrase — hands the mic off to whichever app should take the turn. It has **no launcher
 icon and no UI**: it starts on boot and lives entirely in the background.
 
 Portal-Wake is a small, standalone wake-detection service, so **any app can register its own "hey X"**
@@ -24,8 +24,8 @@ The easy way — no building, no command line:
    **`Install-PortalWake.bat`** (Windows).
 5. When the Portal asks **"Allow USB debugging?"**, tap **Allow**.
 
-The installer handles everything else: it downloads Android's `adb` if needed, downloads the app
-(a large download — the on-device speech model is bundled in), installs it, grants the microphone, and starts it.
+The installer handles everything else: it downloads Android's `adb` if needed, installs the app (the
+openWakeWord ONNX models are bundled in the APK), grants the microphone, and starts it.
 The app has **no icon**; it runs in the background and comes back on every reboot. Say **"hey jarvis"**
 near the Portal. To remove it, double-click **`Uninstall-PortalWake`** — this also re-enables Meta's
 built-in "Hey Alexa" detector, returning the Portal to its original state.
@@ -37,7 +37,13 @@ Windows "unblock files" step).
 
 Wake words are **discovered at runtime**, not hard-coded. Any installed app becomes a wake plugin by
 declaring an exported receiver that responds to `com.portal.wake.action.WAKE` and carries its wake word
-as **named meta-data** — one field per setting. Example — an app that adds "hey jarvis":
+as **named meta-data** — one field per setting.
+
+Portal-Wake detects wake phrases with **openWakeWord** — a per-phrase neural classifier (`.onnx`), not a
+general speech recognizer. Built-in **"hey jarvis"** and **"hey alexa"** ship with bundled models; any
+**custom** phrase needs a model you train and ship inside your plugin APK.
+
+Example — an app that adds "hey jarvis":
 
 ```xml
 <receiver android:name=".WakeHandoffReceiver" android:exported="true">
@@ -45,21 +51,56 @@ as **named meta-data** — one field per setting. Example — an app that adds "
         <action android:name="com.portal.wake.action.WAKE" />
     </intent-filter>
     <meta-data android:name="com.portal.wake.phrase"         android:value="hey jarvis" />
-    <meta-data android:name="com.portal.wake.min_confidence" android:value="0.55" />
+    <meta-data android:name="com.portal.wake.min_confidence" android:value="0.5" />
     <!-- optional: com.portal.wake.id  (defaults to the keyword, here "jarvis") -->
 </receiver>
 ```
 
+Example — a **custom** wake word (requires your own model):
+
+```xml
+<receiver android:name=".WakeHandoffReceiver" android:exported="true">
+    <intent-filter>
+        <action android:name="com.portal.wake.action.WAKE" />
+    </intent-filter>
+    <meta-data android:name="com.portal.wake.phrase"         android:value="hey computer" />
+    <meta-data android:name="com.portal.wake.min_confidence" android:value="0.5" />
+    <meta-data android:name="com.portal.wake.model"         android:value="oww/hey_computer.onnx" />
+</receiver>
+```
+
+Put the `.onnx` file at that asset path inside **your** app (`app/src/main/assets/oww/hey_computer.onnx`).
+Portal-Wake loads it from your APK at runtime — no change to portal-wake itself.
+
+### Training a custom `.onnx` model
+
+openWakeWord models are small ONNX classifiers (~1 MB) trained for one phrase. To add a wake word that
+isn't "hey jarvis" or "alexa", you need to train one:
+
+1. **Train locally** — follow the [openWakeWord training guide](https://github.com/dscripka/openWakeWord#training-models)
+   (Python notebook in the upstream repo). Export the resulting `.onnx` classifier.
+2. **Or use the hosted trainer** — [openwakeword.com](https://openwakeword.com/) can train and deliver a
+   ready-to-use ONNX file from sample recordings.
+
+Ship the `.onnx` in your plugin's assets and point `com.portal.wake.model` at it. The shared
+`melspectrogram.onnx` and `embedding_model.onnx` stages are bundled in portal-wake — your model is only
+the final classifier head, exactly like the upstream `hey_jarvis_v0.1.onnx`.
+
+Tune detection with `com.portal.wake.min_confidence` (0.0–1.0, default 0.5): lower = more sensitive,
+higher = fewer false triggers. Every fire logs its score to `debug.txt`
+(`wake detected → jarvis [oww p=0.872]` at `/sdcard/Android/data/com.portal.wake/files/debug.txt`).
+
+### Meta-data reference
+
 - **`phrase`** (required) — the full spoken phrase. Portal-Wake takes the **last word as the keyword**
-  and the **word before it as the lead** ("hey", "hi", …). The lead a user must say therefore lives in
-  *your* phrase, not in Portal-Wake — so `hi bob` works just as well, and a single word like `computer`
-  registers with no required lead.
-- **`min_confidence`** (optional, default ~0.5) — the keyword-confidence floor; above the baseline it
-  enables the strict (precise) matching used for hand-off words like jarvis. A missing or malformed value
-  falls back to the default (and is logged); it never disables the wake word.
+  and the **word before it as the lead** ("hey", "hi", …). A single word like `computer` registers with
+  no required lead.
+- **`min_confidence`** (optional, default 0.5) — the openWakeWord **detection threshold** for this phrase.
+- **`model`** (required for custom phrases) — path to your `.onnx` classifier inside **your app's assets**
+  (e.g. `oww/hey_computer.onnx`). Omit for built-in "hey jarvis" / "hey alexa" — those models ship in
+  portal-wake.
 - **`id`** (optional) — the value reported back on a match; defaults to the keyword.
-- **One receiver = one wake word.** To register several, declare several receivers — each is discovered
-  independently.
+- **One receiver = one wake word.** To register several, declare several receivers.
 
 ## For developers — build from source
 
@@ -72,14 +113,12 @@ git clone https://github.com/rudysev/portal-wake.git
 cd portal-wake
 ```
 
-Building needs a JDK (17 or 21), the Android SDK, and the speech model — it's too large to keep in the
-repo, so see `app/src/main/assets/model-en-us/README.md` for the one-time download. Then:
+Building needs a JDK (17 or 21) and the Android SDK. The openWakeWord models are bundled in
+`portal-commons` — no separate download step:
 
 ```bash
 ./gradlew assembleDebug
 ```
-
-(If the model is missing the app still builds and runs — it just listens for nothing, no crash.)
 
 `./setup.sh` installs your local build on a connected Portal (grants the mic, frees the slot, starts the
 headless service); `./setup.sh --restore` re-enables the native "Hey Alexa" detector (com.millennium) and

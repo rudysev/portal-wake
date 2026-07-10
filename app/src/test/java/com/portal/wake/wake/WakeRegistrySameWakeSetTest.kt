@@ -1,6 +1,5 @@
 package com.portal.wake.wake
 
-import com.portal.commons.audio.WakeMatcher
 import com.portal.commons.audio.WakeWord
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -13,7 +12,8 @@ import org.junit.Test
  */
 class WakeRegistrySameWakeSetTest {
 
-    private fun word(id: String, minConf: Double = 0.5) = WakeWord(id, keyword = id, lead = "hey", minConf = minConf)
+    private fun word(id: String, scoreThreshold: Double = 0.5) =
+        WakeWord(id, keyword = id, lead = "hey", scoreThreshold = scoreThreshold)
 
     @Test fun identicalSetsAreEqual() {
         val a = listOf(word("jarvis"), word("alexa"))
@@ -41,8 +41,8 @@ class WakeRegistrySameWakeSetTest {
 
     @Test fun changedFieldDiffers() {
         // Same id but a different keyword/phrase/minConf is a real change (data-class equality).
-        val a = listOf(word("jarvis", minConf = 0.5))
-        val b = listOf(word("jarvis", minConf = 0.7))
+        val a = listOf(word("jarvis", scoreThreshold = 0.5))
+        val b = listOf(word("jarvis", scoreThreshold = 0.7))
         assertFalse(WakeRegistry.sameWakeSet(a, b))
     }
 
@@ -65,7 +65,7 @@ class WakeRegistrySameWakeSetTest {
     @Test fun builtinJarvisEqualsAssistantSpec_soWordsAreUnchangedAcrossInstall() {
         val builtin = listOf(WakeRegistry.BUILTIN_JARVIS)
         val fromPluginSpec = listOf(
-            WakeSpec.build("hey jarvis", id = "jarvis", minConfidence = "0.6", defaultMinConf = WakeMatcher.BASELINE_CONF) {}!!,
+            WakeSpec.build("hey jarvis", id = "jarvis", minConfidence = "0.5", defaultMinConf = WakeWord.DEFAULT_SCORE_THRESHOLD) {}!!,
         )
         assertTrue(WakeRegistry.sameWakeSet(builtin, fromPluginSpec))
     }

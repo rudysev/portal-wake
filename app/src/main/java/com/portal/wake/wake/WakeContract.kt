@@ -17,6 +17,7 @@ package com.portal.wake.wake
  *     </intent-filter>
  *     <meta-data android:name="com.portal.wake.phrase"         android:value="hey jarvis" />
  *     <meta-data android:name="com.portal.wake.min_confidence" android:value="0.55" />
+ *     <meta-data android:name="com.portal.wake.model"         android:value="oww/hey_jarvis.onnx" />
  *     <!-- optional: com.portal.wake.id (defaults to the keyword, here "jarvis") -->
  * </receiver>
  * ```
@@ -61,8 +62,15 @@ object WakeContract {
     /** Optional meta-data key: the wake id reported on a match; defaults to the keyword when absent. */
     const val META_ID = "com.portal.wake.id"
 
-    /** Optional meta-data key: the keyword-confidence floor in [[MIN_CONFIDENCE], [MAX_CONFIDENCE]]; defaults to the matcher baseline. */
+    /** Optional meta-data key: the detection threshold in [[MIN_CONFIDENCE], [MAX_CONFIDENCE]]; defaults to [com.portal.commons.audio.WakeWord.DEFAULT_SCORE_THRESHOLD]. */
     const val META_MIN_CONFIDENCE = "com.portal.wake.min_confidence"
+
+    /**
+     * Optional meta-data key: path to an openWakeWord classifier `.onnx` inside **this plugin's assets**
+     * (e.g. `"oww/hey_jarvis.onnx"`). Required for custom wake words — built-in "hey jarvis" and "hey alexa"
+     * ship bundled models in portal-wake; any other phrase needs a plugin-supplied model. See README.
+     */
+    const val META_MODEL = "com.portal.wake.model"
 
     /** Inclusive bounds a declared [META_MIN_CONFIDENCE] must fall within. */
     const val MIN_CONFIDENCE = 0.0
