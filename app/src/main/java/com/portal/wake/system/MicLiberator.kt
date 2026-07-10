@@ -9,7 +9,7 @@ import com.portal.commons.DebugLog
  * Frees the microphone from the Portal's "Hey Alexa" wake detector (`com.millennium`) so this app can
  * own the single handset-mic slot.
  *
- * `com.millennium` runs an always-on Vosk "Hey Alexa" wake listener on the **handset mic** — the same
+ * `com.millennium` runs an always-on "Hey Alexa" wake listener on the **handset mic** — the same
  * slot we need — and starves us while it runs (it drives `falcon`, the Alexa client). We best-effort
  * stop it when we acquire the mic.
  *

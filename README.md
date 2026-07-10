@@ -74,17 +74,22 @@ Portal-Wake loads it from your APK at runtime — no change to portal-wake itsel
 
 ### Training a custom `.onnx` model
 
-openWakeWord models are small ONNX classifiers (~1 MB) trained for one phrase. To add a wake word that
-isn't "hey jarvis" or "alexa", you need to train one:
+openWakeWord models are small ONNX classifiers (~1 MB) trained for **one phrase**. Built-in
+`"hey jarvis"` / `"hey alexa"` heads ship inside `portal-commons` (`assets/oww/`). Any other phrase
+needs a classifier **you** train and ship in **your plugin APK**.
 
-1. **Train locally** — follow the [openWakeWord training guide](https://github.com/dscripka/openWakeWord#training-models)
-   (Python notebook in the upstream repo). Export the resulting `.onnx` classifier.
-2. **Or use the hosted trainer** — [openwakeword.com](https://openwakeword.com/) can train and deliver a
-   ready-to-use ONNX file from sample recordings.
-
-Ship the `.onnx` in your plugin's assets and point `com.portal.wake.model` at it. The shared
-`melspectrogram.onnx` and `embedding_model.onnx` stages are bundled in portal-wake — your model is only
-the final classifier head, exactly like the upstream `hey_jarvis_v0.1.onnx`.
+1. **Train** — follow the [openWakeWord training guide](https://github.com/dscripka/openWakeWord#training-models)
+   (Python notebook in the upstream repo), or use the hosted trainer at
+   [openwakeword.com](https://openwakeword.com/). Export the resulting `.onnx` **classifier head only**
+   (do not re-ship `melspectrogram.onnx` / `embedding_model.onnx` — those shared stages are already
+   bundled in the Portal apps via commons).
+2. **Include in your plugin** — put the file under your app's assets, e.g.
+   `app/src/main/assets/oww/hey_computer.onnx`.
+3. **Declare it** — set `com.portal.wake.model` to that asset path (see example above).
+4. **Dynamic load** — on start (and when packages change), portal-wake's `WakeRegistry` discovers
+   plugin receivers; `OwwHeadResolver` opens your APK's assets via `createPackageContext` and builds an
+   openWakeWord head for each phrase that has model bytes. No rebuild of portal-wake is required —
+   install/update your plugin and the new wake word becomes detectable.
 
 Tune detection with `com.portal.wake.min_confidence` (0.0–1.0, default 0.5): lower = more sensitive,
 higher = fewer false triggers. Every fire logs its score to `debug.txt`
