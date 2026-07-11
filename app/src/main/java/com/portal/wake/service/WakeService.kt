@@ -170,13 +170,12 @@ class WakeService :
         val detectableUnchanged = WakeRegistry.sameDetectableSet(targets, newTargets)
         targets = newTargets // ALWAYS refresh routing — the component for an unchanged word may have changed
         val heads = if (detectableUnchanged) emptyList() else OwwHeadResolver.resolve(applicationContext, newTargets)
-        when (
-            WakeSetChange.decide(
-                detectableUnchanged = detectableUnchanged,
-                hasDetectableHeads = heads.isNotEmpty(),
-                hasEngine = engine != null,
-            )
-        ) {
+        val action = WakeSetChange.decide(
+            detectableUnchanged = detectableUnchanged,
+            hasDetectableHeads = heads.isNotEmpty(),
+            hasEngine = engine != null,
+        )
+        when (action) {
             WakeSetEngineAction.ROUTING_ONLY ->
                 DebugLog.log("wake words unchanged → routing refreshed, no detector rebuild")
 
@@ -184,24 +183,24 @@ class WakeService :
                 DebugLog.log("wake set now has no detectable words → stopping engine")
                 engine?.close()
                 engine = null
-                capturing = false
             }
 
             WakeSetEngineAction.BUILD -> {
                 DebugLog.log("wake set now non-empty → building engine")
                 buildEngine()
-                arbiter.reconcile()
             }
 
             WakeSetEngineAction.REBUILD -> {
                 DebugLog.log("wake set changed → rebuilding engine")
                 engine?.close()
-                // close()'s onStopped is ignored once buildEngine bumps engineGeneration, so clear
-                // capturing here — otherwise reconcile() sees isCapturing and never restarts the mic.
-                capturing = false
+                // close()'s onStopped is ignored once buildEngine bumps engineGeneration — clear
+                // capturing via mustClearCapturing before reconcile or the mic never restarts.
                 buildEngine()
-                arbiter.reconcile()
             }
+        }
+        if (WakeSetChange.mustClearCapturing(action)) capturing = false
+        if (action == WakeSetEngineAction.BUILD || action == WakeSetEngineAction.REBUILD) {
+            arbiter.reconcile()
         }
     }
 
