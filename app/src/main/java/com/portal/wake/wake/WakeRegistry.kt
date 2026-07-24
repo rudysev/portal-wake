@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import com.portal.commons.DebugLog
+import com.portal.commons.audio.TwoStageTuning
 import com.portal.commons.audio.WakeMatcher
 import com.portal.commons.audio.WakeWord
 import com.portal.wake.system.Falcon
@@ -77,9 +78,10 @@ object WakeRegistry {
                     minConfidence = meta.text(WakeContract.META_MIN_CONFIDENCE),
                     defaultMinConf = WakeMatcher.BASELINE_CONF,
                     onProblem = { reason -> DebugLog.log("registry: wake plugin ${component.flattenToShortString()}: $reason") },
+                    scoreThreshold = meta.text(WakeContract.META_SCORE_THRESHOLD),
                 ) ?: continue
                 warnIfMisdeclared(component, phrase, word)
-                add(WakeTarget(word, component, info.packageName))
+                add(WakeTarget(word, component, info.packageName, meta.text(WakeContract.META_MODEL)))
             }
         }
     }.getOrElse {
@@ -123,7 +125,12 @@ object WakeRegistry {
      * in its strict floor without an Android `PackageManager`; the installed assistant overrides it via its
      * manifest spec.
      */
-    internal val BUILTIN_JARVIS = WakeWord.fromPhrase("hey jarvis", id = "jarvis", minConf = WakeMatcher.STRICT_MIN_CONF)!!
+    internal val BUILTIN_JARVIS = WakeWord.fromPhrase(
+        "hey jarvis",
+        id = "jarvis",
+        minConf = WakeMatcher.STRICT_MIN_CONF,
+        scoreThreshold = TwoStageTuning.DEFAULT_STAGE1_THRESHOLD,
+    )!!
 
     /**
      * Built-in wake words used when no plugin covers them. "jarvis" routes to a registered handler (the
@@ -131,16 +138,23 @@ object WakeRegistry {
      * native Alexa client (falcon) — **only advertised when falcon is installed**, so we never hand the
      * mic to an absent consumer (which would never record, leaving us unable to detect a release).
      *
-     * Both use [WakeMatcher.STRICT_MIN_CONF] (above [WakeMatcher.BASELINE_CONF]) so the lenient clean-phrase
-     * bypass is OFF and a real confidence floor is required — "jarvis" decodes false-positive-prone
-     * soundalikes more readily than the old default did. Precision still comes mainly from the required
-     * "hey". (The installed assistant overrides this default via its own manifest spec, which carries the
-     * matching strict floor.)
+     * Both carry [WakeMatcher.STRICT_MIN_CONF] (above [WakeMatcher.BASELINE_CONF]) so the lenient
+     * clean-phrase bypass is OFF and a real confidence floor is required — but that floor only applies on
+     * the **Vosk-primary** path, and both of these ship bundled openWakeWord models, so in practice both run
+     * on the two-stage cascade at [TwoStageTuning.DEFAULT_STAGE1_THRESHOLD]. The strict floor is kept as the
+     * correct value for the path they'd take if their model were ever unavailable. (The installed assistant
+     * overrides this default via its own manifest spec.)
      */
     private fun defaults(pm: PackageManager): List<WakeTarget> = buildList {
         add(WakeTarget(BUILTIN_JARVIS, component = null, source = null))
         if (isInstalled(pm, Falcon.PACKAGE)) {
-            add(WakeTarget(WakeWord.fromPhrase("hey alexa", id = "alexa", minConf = WakeMatcher.STRICT_MIN_CONF)!!, component = null, source = null))
+            val alexa = WakeWord.fromPhrase(
+                "hey alexa",
+                id = "alexa",
+                minConf = WakeMatcher.STRICT_MIN_CONF,
+                scoreThreshold = TwoStageTuning.DEFAULT_STAGE1_THRESHOLD,
+            )!!
+            add(WakeTarget(alexa, component = null, source = null))
         } else {
             DebugLog.log("registry: ${Falcon.PACKAGE} not installed — skipping 'hey alexa'")
         }

@@ -16,9 +16,16 @@ package com.portal.wake.wake
  *         <action android:name="com.portal.wake.action.WAKE" />
  *     </intent-filter>
  *     <meta-data android:name="com.portal.wake.phrase"         android:value="hey jarvis" />
- *     <meta-data android:name="com.portal.wake.min_confidence" android:value="0.55" />
  *     <!-- optional: com.portal.wake.id (defaults to the keyword, here "jarvis") -->
  * </receiver>
+ * ```
+ *
+ * A phrase portal-wake has no bundled model for ships its own openWakeWord classifier, which is what puts
+ * it on the accurate two-stage path rather than the Vosk-only fallback:
+ * ```xml
+ *     <meta-data android:name="com.portal.wake.phrase"          android:value="hey bob" />
+ *     <meta-data android:name="com.portal.wake.model"           android:value="oww/hey_bob.onnx" />
+ *     <!-- optional: com.portal.wake.score_threshold (defaults to 0.30 — loose on purpose) -->
  * ```
  * [META_PHRASE] is the full spoken phrase: portal-wake takes the **last word as the keyword** and the
  * **word before it as the lead** (e.g. "hey", "hi") — so the lead a user must say lives in the phrase you
@@ -61,10 +68,42 @@ object WakeContract {
     /** Optional meta-data key: the wake id reported on a match; defaults to the keyword when absent. */
     const val META_ID = "com.portal.wake.id"
 
-    /** Optional meta-data key: the keyword-confidence floor in [[MIN_CONFIDENCE], [MAX_CONFIDENCE]]; defaults to the matcher baseline. */
+    /**
+     * Optional meta-data key: the **Vosk** keyword-confidence floor in [[MIN_CONFIDENCE], [MAX_CONFIDENCE]];
+     * defaults to the matcher baseline.
+     *
+     * Applies only on the **Vosk-primary** path — a phrase with no openWakeWord model (see [META_MODEL]),
+     * which is detected by grammar decode exactly as every phrase was before openWakeWord existed. A phrase
+     * that *does* have a model is detected by the two-stage cascade, where this value has no meaning: it is
+     * a Vosk per-word confidence (a real wake decodes at ~1.00), not an openWakeWord probability, and the
+     * two are not on the same scale. Use [META_SCORE_THRESHOLD] to tune a model-backed phrase.
+     */
     const val META_MIN_CONFIDENCE = "com.portal.wake.min_confidence"
 
-    /** Inclusive bounds a declared [META_MIN_CONFIDENCE] must fall within. */
+    /**
+     * Optional meta-data key: the **openWakeWord** classifier score in [[MIN_CONFIDENCE], [MAX_CONFIDENCE]]
+     * this phrase must reach, i.e. its **stage-1** threshold in the two-stage cascade. Defaults to
+     * [com.portal.commons.audio.TwoStageTuning.DEFAULT_STAGE1_THRESHOLD] (0.30).
+     *
+     * The default is deliberately loose. Stage 1 is a recall filter, not the precision gate — a
+     * phrase-constrained Vosk decode of the same audio (stage 2) is what rejects speech that merely *scores*
+     * like the phrase. Raising this mostly costs recall on far-field and noisy speech, and buys little
+     * precision. Raise it only if you ship a [META_MODEL] whose calibration you know differs.
+     */
+    const val META_SCORE_THRESHOLD = "com.portal.wake.score_threshold"
+
+    /**
+     * Optional meta-data key: path to an openWakeWord classifier `.onnx` inside **this plugin's own
+     * assets** (e.g. `"oww/hey_bob.onnx"`).
+     *
+     * Portal-wake bundles models for "hey jarvis" and "hey alexa"; **any other phrase needs one from its
+     * plugin**. Without a model the phrase is still detected — it falls back to the Vosk-primary path and
+     * behaves exactly as it did before openWakeWord existed, honouring [META_MIN_CONFIDENCE] — but it does
+     * not get the cascade's accuracy.
+     */
+    const val META_MODEL = "com.portal.wake.model"
+
+    /** Inclusive bounds a declared [META_MIN_CONFIDENCE] / [META_SCORE_THRESHOLD] must fall within. */
     const val MIN_CONFIDENCE = 0.0
     const val MAX_CONFIDENCE = 1.0
 

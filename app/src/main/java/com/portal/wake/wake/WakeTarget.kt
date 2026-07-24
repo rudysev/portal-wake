@@ -11,9 +11,13 @@ import com.portal.commons.audio.WakeWord
  *   (no installed handler) — which currently just logs. This is the seam between "recognize" and
  *   "launch": the recognizer never sees the component; the dispatcher routes by [WakeWord.id].
  * @param source    the handler's package id (for logs), or null for a built-in default.
+ * @param modelAsset path to an openWakeWord classifier `.onnx` inside the plugin's own assets (see
+ *   [WakeContract.META_MODEL]), or null to use a bundled built-in model when portal-wake has one. A phrase
+ *   with neither is still detected, on the Vosk-primary path — see [OwwModelResolver].
  */
 data class WakeTarget(
     val word: WakeWord,
     val component: ComponentName?,
     val source: String?,
+    val modelAsset: String? = null,
 )

@@ -14,12 +14,16 @@ import android.os.Looper
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import com.portal.commons.DebugLog
+import com.portal.commons.audio.OpenWakeWordDetector
+import com.portal.commons.audio.WakeDetector
 import com.portal.commons.audio.WakeDetectors
 import com.portal.commons.audio.WakeEvent
 import com.portal.commons.audio.WakeMicConfig
 import com.portal.commons.audio.WakeMicEngine
+import com.portal.commons.audio.WakeRouting
 import com.portal.wake.system.Falcon
 import com.portal.wake.system.MicLiberator
+import com.portal.wake.wake.OwwModelResolver
 import com.portal.wake.wake.WakeContract
 import com.portal.wake.wake.WakeRegistry
 import com.portal.wake.wake.WakeTarget
@@ -96,6 +100,11 @@ class WakeService :
 
     private var engine: WakeMicEngine? = null
     private var targets: List<WakeTarget> = emptyList()
+
+    // Wake ids the two-stage cascade covers (it has an openWakeWord model for them). Everything else is
+    // Vosk-primary. Read on the capture thread by [onWake]; written on main when the engine is (re)built —
+    // a rebuild always tears the engine down first, so the capture thread can't be mid-fire across the write.
+    @Volatile private var owwOwnedIds: Set<String> = emptySet()
     private var started = false
 
     // Whether the current engine is started (reflects what we last applied). The arbiter drives this via
@@ -202,7 +211,7 @@ class WakeService :
             context = applicationContext,
             config = WakeMicConfig(
                 wakeWords = words,
-                detectors = listOf(WakeDetectors.vosk()),
+                detectors = buildDetectors(),
                 onDetectorUnavailable = { DebugLog.log("wake unavailable (model missing) — service idle") },
                 onWake = ::onWake,
                 onError = { message ->
@@ -213,6 +222,37 @@ class WakeService :
                 beforeMicAcquire = { MicLiberator.freeMic(applicationContext) },
             ),
         )
+    }
+
+    /**
+     * The detector set for the current [targets], **partitioned by phrase**.
+     *
+     * The **two-stage cascade** covers every phrase that has an openWakeWord classifier: portal-wake bundles
+     * models for "hey jarvis" and "hey alexa", and a plugin can ship its own
+     * ([WakeContract.META_MODEL]). openWakeWord proposes at a loose threshold and a phrase-constrained Vosk
+     * decode of the same 2 s window disposes — measured at 85–90% recall with zero false accepts, against
+     * 57% for Vosk alone and openWakeWord alone's three confirmed false accepts during meeting playback.
+     *
+     * The **streaming Vosk detector** is added only when some phrase has *no* model, since openWakeWord
+     * cannot detect one it has no classifier for. That phrase then behaves exactly as it did before —
+     * grammar decode honouring its `min_confidence`. It is conditional rather than always-on because each
+     * Vosk consumer loads its own `Model`, and the common case (built-ins only) needs just the cascade's.
+     *
+     * [WakeRouting] keeps this a partition and not a race: for an id the cascade owns, a Vosk fire is a
+     * logged shadow. Running both over the same phrase would be an OR, which unions their false accepts.
+     */
+    private fun buildDetectors(): List<WakeDetector.Factory> {
+        val configs = OwwModelResolver.resolve(this, targets)
+        owwOwnedIds = OwwModelResolver.ownedIds(configs)
+        val needsVosk = OwwModelResolver.needsVoskPrimary(targets, owwOwnedIds)
+        DebugLog.log(
+            "detectors: two-stage owns $owwOwnedIds" +
+                if (needsVosk) "; vosk-primary for ${targets.map { it.word.id }.filter { it !in owwOwnedIds }}" else "",
+        )
+        return buildList {
+            if (configs.isNotEmpty()) add(WakeDetectors.twoStage(configs))
+            if (needsVosk || configs.isEmpty()) add(WakeDetectors.vosk())
+        }
     }
 
     /** Coalesce a burst of package broadcasts (one reinstall = 2–3) into a single debounced refresh. */
@@ -231,8 +271,13 @@ class WakeService :
         val newTargets = WakeRegistry.discover(this)
         val newWords = WakeRegistry.wakeWords(newTargets)
         val wordsUnchanged = WakeRegistry.sameWakeSet(WakeRegistry.wakeWords(targets), newWords)
+        // The detector *set* is fixed when the engine is built, so a change to which phrases are
+        // model-backed can't be applied by an in-place grammar swap — it needs a rebuild. Computed from the
+        // declarations (no asset reads), and checked even when the words are unchanged: a plugin update can
+        // keep its phrase and swap its model.
+        val shapeChanged = OwwModelResolver.detectorShape(targets) != OwwModelResolver.detectorShape(newTargets)
         targets = newTargets // ALWAYS refresh routing — the component for an unchanged word may have changed
-        if (wordsUnchanged) {
+        if (wordsUnchanged && !shapeChanged) {
             DebugLog.log("wake words unchanged → routing refreshed, no grammar rebuild")
             return
         }
@@ -254,6 +299,15 @@ class WakeService :
                 arbiter.reconcile()
             }
 
+            // Which phrases are model-backed changed, so the detector set itself has to be rebuilt. Costs a
+            // brief mic release, which is why it is gated on the shape rather than on any wake-set change.
+            shapeChanged -> {
+                DebugLog.log("wake detector shape changed → rebuilding engine")
+                engine?.close()
+                buildEngine()
+                arbiter.reconcile()
+            }
+
             else -> {
                 DebugLog.log("wake set changed → swapping grammar in place")
                 engine?.updateWakeWords(newWords)
@@ -268,6 +322,14 @@ class WakeService :
      * thread — all orchestration runs single-threaded on main, so the capture thread only captures.
      */
     private fun onWake(event: WakeEvent) {
+        // A phrase is owned by exactly one detector (see [buildDetectors]). When both are configured, the
+        // streaming Vosk detector still *decodes* phrases the cascade owns — it has them in its grammar —
+        // so without this gate one utterance would hand off twice. The shadow line is worth keeping: it is
+        // a free side-by-side comparison of the two detectors on live audio.
+        if (!WakeRouting.shouldRoute(event.detectorId, event.wakeId, owwOwnedIds)) {
+            DebugLog.log("shadow: ${event.detectorId} fired '${event.wakeId}' [${event.transcript}] — two-stage owns it")
+            return
+        }
         main.post { dispatch(event.wakeId) }
     }
 

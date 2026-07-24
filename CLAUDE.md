@@ -7,13 +7,13 @@ fast version.
 
 A **headless, always-on wake-word listener** for the Meta Portal+ (model "aloha", Android 9 / API 28),
 package `com.portal.wake`. No launcher icon, no Activity, no UI. It boots a foreground service, owns
-the mic, runs an on-device **Vosk** recognizer, and on a wake match hands the mic off to another app.
-Wake detection is small and standalone, and wake words are **discovered at runtime** instead of
-hard-coded.
+the mic, runs an on-device **two-stage wake detector** (openWakeWord → Vosk), and on a wake match hands
+the mic off to another app. Wake detection is small and standalone, and wake words are **discovered at
+runtime** instead of hard-coded.
 
 minSdk 28 / targetSdk 29 / compileSdk 36. **No Google Mobile Services.** Deps: `androidx.core`,
-`com.alphacephei:vosk-android`, and `com.portal:commons` — wired in via a Gradle composite build from the
-sibling `../portal-commons`. This repo lives in the **portal-apps** workspace (the superproject that holds
+`com.alphacephei:vosk-android`, `com.microsoft.onnxruntime:onnxruntime-android`, and `com.portal:commons`
+— wired in via a Gradle composite build from the sibling `../portal-commons`. This repo lives in the **portal-apps** workspace (the superproject that holds
 `portal-wake`, `portal-commons`, and `portal-assistant` side by side as submodules).
 
 Built-in routes: **jarvis** → the registered handler `portal-assistant` (via the `WakeContract` plugin
@@ -57,6 +57,28 @@ API); **alexa** → the native Alexa client `falcon` (via its `LISTEN` intent). 
   off — we own that word).
 - **No AGC / NoiseSuppressor on the capture stream** — plain `VOICE_RECOGNITION`, no effects (the proven
   config).
+- **openWakeWord is stage 1; Vosk *verifies* it. It is an AND, not an OR — don't turn it back into one.**
+  `WakeDetectors.twoStage()` runs openWakeWord at a deliberately **loose 0.30** and then re-decodes the same
+  2 s window with a phrase-constrained Vosk grammar; a candidate fires only if Vosk decodes the phrase (or
+  scores ≥0.85, where stage 1 is the more reliable of the two). Measured on this device: Vosk alone 57%
+  recall / 0 FA; openWakeWord alone @0.30 92% but **3 confirmed false accepts** during meeting playback;
+  the cascade 85–90% at **0 FA**. Those false accepts scored 0.451–0.477, *inside* the band genuine
+  far-field speech occupies — no single threshold separates them, which is the whole reason for a second
+  stage. Configuring `oww()` and `vosk()` as two parallel detectors instead is an **OR**: their false
+  accepts add up. Full evidence in `../../hey-jarvis/` (`RESULTS.md`, `PHASE_A.md`–`PHASE_C.md`).
+- **Two thresholds, two scales — don't merge them.** `com.portal.wake.min_confidence` is a **Vosk per-word
+  confidence** (a real wake decodes at ~1.00) and only applies on the Vosk-primary path;
+  `com.portal.wake.score_threshold` is the **openWakeWord probability** (stage 1), default 0.30. Mapping one
+  onto the other would silently tighten stage 1 to a value on the wrong scale and cost the recall the
+  cascade exists to buy. Stage 1 is a recall filter; **precision comes from stage 2**, so raising the
+  stage-1 threshold mostly just loses far-field wakes.
+- **A phrase with no openWakeWord model stays Vosk-primary.** openWakeWord can only detect a phrase it has
+  a classifier for. Portal-wake bundles "hey jarvis" and "hey alexa"; a plugin ships its own via
+  `com.portal.wake.model`. Everything else is detected by grammar decode exactly as before openWakeWord
+  existed — so the plugin API keeps working unchanged for a plugin that ships no model. `OwwModelResolver`
+  makes the split and `WakeRouting` enforces it: **each id has exactly one detector that may hand off**, and
+  the other's fire is a logged `shadow:` line (a free live A/B). The Vosk detector is only configured when
+  some phrase actually needs it — each Vosk consumer loads its own model.
 - **Accuracy lives in `WakeMatcher` — now in `portal-commons` (`com.portal:commons`), not this repo.** A pure
   function, fully unit-tested; tune the precision/recall dials there from on-device `debug.txt` logs (see
   `TUNING.md`). `WakeMatcher` + `WakeMatcherTest` moved to `../portal-commons/commons/…/com/portal/commons/audio/`,
@@ -90,12 +112,16 @@ via injected `Scheduler`/`AudioGate` seams; WakeNotification = the foreground-se
 `audio/` = `CallGate` = in-call gate [tested] — the **only** class still here. The **wake-detection
 core** moved to `portal-commons` so `portal-assistant` can reuse it for its foreground detector (see the
 shared-code note below): `WakeMicEngine` = mic + capture over `PcmCaptureSession`, configured via
-`WakeMicConfig` + `WakeDetectors.vosk()`; `VoskWakeDetector` = Vosk recognition policy [pre-ready
-`PcmRingBuffer` + handoff cooldown + idle-reset]; `WakeRecognizer` = Vosk boundary [warm-up + ready-gate];
-`WakeMatcher` = accuracy gate [tested]; `WakeWord`. `WakeMicConfig.beforeMicAcquire` is the mic-slot hook —
+`WakeMicConfig` + `WakeDetectors.twoStage()`; `TwoStageWakeDetector` = the cascade [tested] over
+`OpenWakeWordDetector` (stage 1, ONNX) + `VoskPhraseVerifier` (stage 2), with `TwoStagePolicy`/`TwoStageTuning`
+the pure decision + measured thresholds [tested]; `VoskWakeDetector` = the Vosk-primary path for phrases with
+no model [pre-ready `PcmRingBuffer` + handoff cooldown + idle-reset]; `WakeRecognizer` = Vosk boundary
+[warm-up + ready-gate]; `WakeMatcher` = Vosk accuracy gate [tested]; `WakeWord`. `WakeMicConfig.beforeMicAcquire` is the mic-slot hook —
 portal-wake passes `MicLiberator.freeMic`, the assistant passes none.
 `wake/` = the extensibility layer (WakeContract = the published plugin contract [tested], WakeSpec
-= builds a WakeWord from a plugin's named wake meta-data [tested], WakeRegistry = discovery, WakeTarget = word↔handler, HandoffRecovery =
+= builds a WakeWord from a plugin's named wake meta-data [tested], WakeRegistry = discovery, WakeTarget = word↔handler,
+OwwModelResolver = splits the wake set into cascade-owned vs Vosk-primary + decides when a change needs an
+engine rebuild rather than an in-place grammar swap [tested], HandoffRecovery =
 reclaim rule [tested], MicContentionDetector = foreign-recording-session detector [tested], CaptureGate =
 two-reason capture coordinator [call + handoff; tested]).
 `system/` — `MicLiberator` frees the mic slot; `Falcon` drives the native Alexa client via its `LISTEN`
