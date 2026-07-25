@@ -66,6 +66,16 @@ API); **alexa** → the native Alexa client `falcon` (via its `LISTEN` intent). 
   far-field speech occupies — no single threshold separates them, which is the whole reason for a second
   stage. Configuring `oww()` and `vosk()` as two parallel detectors instead is an **OR**: their false
   accepts add up. Full evidence in `../../hey-jarvis/` (`RESULTS.md`, `PHASE_A.md`–`PHASE_C.md`).
+- **Keep the audit clips — a score you can't listen to is not evidence.** On a debug build the cascade
+  writes the 2 s window behind every fire (`wake_`), every stage-1 candidate it declined (`rej_`) and every
+  sub-threshold near-miss (`near_`) to `files/clips/`, named `<prefix>_<wakeId>_<MMdd-HHmmss>_p<score×100>.wav`.
+  `debug.txt` alone cannot tell a false accept from someone genuinely saying the phrase, and that distinction
+  is what every tuning decision here turned on — openWakeWord's **0.998 on ordinary conversation**, the
+  measurement that killed the bypass, was only understood because the audio could be replayed. Gated on
+  `FLAG_DEBUGGABLE`, so an evaluation build captures with no extra step and a release build never records the
+  household. The write happens on `WakeClipRecorder`'s own thread, **not** the capture thread: a `rej_` clip
+  follows a 100–300 ms stage-2 decode that is already spending the `VERIFY_BUDGET_MS` budget, so an inline
+  write would drop audio *and* corrupt the latency measurement that budget exists to make. Don't move it back.
 - **Two thresholds, two scales — don't merge them.** `com.portal.wake.min_confidence` is a **Vosk per-word
   confidence** (a real wake decodes at ~1.00) and only applies on the Vosk-primary path;
   `com.portal.wake.score_threshold` is the **openWakeWord probability** (stage 1), default 0.30. Mapping one
@@ -149,4 +159,6 @@ git submodule update --init --recursive   # from the portal-apps workspace: pull
 ./gradlew assembleDebug
 ./setup.sh   # install + grant mic + start headless + free the mic slot
 npx -y @meta-quest/hzdb adb shell "cat /sdcard/Android/data/com.portal.wake/files/debug.txt"
+# the audio behind each decision (debug builds only — see the audit-clips rule):
+npx -y @meta-quest/hzdb adb pull /sdcard/Android/data/com.portal.wake/files/clips <dest-dir>
 ```

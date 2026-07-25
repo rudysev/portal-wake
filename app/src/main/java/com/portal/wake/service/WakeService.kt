@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ApplicationInfo
 import android.media.AudioManager
 import android.media.AudioRecordingConfiguration
 import android.os.Build
@@ -15,6 +16,8 @@ import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import com.portal.commons.DebugLog
 import com.portal.commons.audio.OpenWakeWordDetector
+import com.portal.commons.audio.WakeAudit
+import com.portal.commons.audio.WakeClipRecorder
 import com.portal.commons.audio.WakeDetector
 import com.portal.commons.audio.WakeDetectors
 import com.portal.commons.audio.WakeEvent
@@ -100,6 +103,29 @@ class WakeService :
 
     private var engine: WakeMicEngine? = null
     private var targets: List<WakeTarget> = emptyList()
+
+    /**
+     * Audit-clip capture: the 2 s window behind every fire, stage-2 rejection and stage-1 near-miss, written
+     * to `files/clips/` (see [WakeAudit]).
+     *
+     * **Debug builds only.** This is the tool that makes a live run interpretable — a `debug.txt` score
+     * cannot distinguish a false accept from someone genuinely saying the phrase, and every finding behind
+     * the shipping tuning came from listening to a clip. It is equally a recording of whatever was said near
+     * the device, so it does not belong in a release build; gating on the debuggable flag rather than a
+     * marker file means an evaluation build (`assembleDebug` + `setup.sh`) captures with no extra step, and
+     * a release build cannot start capturing by accident.
+     *
+     * Built lazily, on main, when the engine is first assembled — never on the capture thread.
+     */
+    private val auditClips: WakeAudit? by lazy {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) {
+            DebugLog.log("audit clips: off (release build)")
+            return@lazy null
+        }
+        val dir = File(getExternalFilesDir(null), "clips")
+        DebugLog.log("audit clips → ${dir.absolutePath} (cap ${WakeClipRecorder.DEFAULT_CAP_PER_KIND}/kind)")
+        WakeClipRecorder(dir)
+    }
 
     // Wake ids the two-stage cascade covers (it has an openWakeWord model for them). Everything else is
     // Vosk-primary. Read on the capture thread by [onWake]; written on main when the engine is (re)built —
@@ -250,7 +276,7 @@ class WakeService :
                 if (needsVosk) "; vosk-primary for ${targets.map { it.word.id }.filter { it !in owwOwnedIds }}" else "",
         )
         return buildList {
-            if (configs.isNotEmpty()) add(WakeDetectors.twoStage(configs))
+            if (configs.isNotEmpty()) add(WakeDetectors.twoStage(configs, audit = auditClips))
             if (needsVosk || configs.isEmpty()) add(WakeDetectors.vosk())
         }
     }
