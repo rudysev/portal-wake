@@ -14,6 +14,18 @@ android {
     targetSdk = 29       // Android 10 — Portal-era behavior; background-started FG mic still allowed
     versionCode = 5
     versionName = "2.3"
+
+    ndk {
+      // Portal hardware is ARM only — every device this app targets ("aloha" and the gen2 units) is
+      // arm64-v8a. The x86/x86_64 slices of onnxruntime and vosk-android were ~63 MB of a 247 MB APK that
+      // no Portal could ever load.
+      //
+      // The cost is that the app no longer installs on an x86 emulator. That is deliberate: the wake path
+      // cannot be evaluated off-device anyway (it needs the real VOICE_RECOGNITION capture path and the
+      // device's own acoustics — see hey-jarvis/PHASE_B.md), so the emulator was never where this was
+      // tested. Drop this block if you ever need a host-side install back.
+      abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+    }
   }
 
   buildTypes {
