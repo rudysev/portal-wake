@@ -75,6 +75,9 @@ internal class MicArbiter(
     // current stand-down came from foreign-mic detection → debounce the reclaim
     private var yieldedByDetection = false
 
+    // when that stand-down happened, so [rescueStuckHandoff] can bound how long it may last
+    private var stoodDownAtMs = 0L
+
     /**
      * Confirms a reclaim after [RECLAIM_DEBOUNCE_MS]: only take the mic back if no one is still recording.
      * Absorbs the transient empty-config callback emitted while our own capture stops (which would otherwise
@@ -101,9 +104,31 @@ internal class MicArbiter(
         override fun run() {
             val inCall = CallGate.inCall(audio.mode)
             if (gate.onCall(inCall)) DebugLog.log("gate: call=$inCall → ${gate.status}")
+            rescueStuckHandoff()
             reconcile() // also retries a refused/zombie start on the next tick
             scheduler.postDelayed(this, STANDDOWN_POLL_MS)
         }
+    }
+
+    /**
+     * **Bounded escape from a detection stand-down.** Reclaim is otherwise driven purely by an *edge* — the
+     * config callback reporting that the consumer stopped — and an edge that never arrives leaves the app
+     * deaf with no timeout and nothing to recover it. That is not hypothetical: it happened on 2026-07-26
+     * and cost ~1.1 h of task C collection (`../../hey-jarvis/PHASE_G.md` §37). The ownership fix in
+     * [MicContentionDetector] closes the cause found there; this closes the *class* of it, for any consumer
+     * whose release we simply never see.
+     *
+     * Only after [DETECTION_RECLAIM_GRACE_MS], which comfortably clears the transient empty-config callback
+     * that [RECLAIM_DEBOUNCE_MS] exists for — so this cannot re-grab the mic from a consumer that is merely
+     * mid-start.
+     */
+    private fun rescueStuckHandoff() {
+        if (!yieldedByDetection || !recovery.active) return
+        if (now() - stoodDownAtMs < DETECTION_RECLAIM_GRACE_MS) return
+        if (audio.hasActiveRecording) return
+        DebugLog.log("stand-down stuck ${now() - stoodDownAtMs}ms with no recorder → reclaiming")
+        scheduler.removeCallbacks(reclaimConfirm)
+        reclaimNow()
     }
 
     /** Seed call state, start the poll, and do the first reconcile. Call once the engine is built. */
@@ -125,6 +150,7 @@ internal class MicArbiter(
         gate.reset()
         recovery.reset()
         yieldedByDetection = false
+        stoodDownAtMs = 0L
     }
 
     /**
@@ -146,7 +172,11 @@ internal class MicArbiter(
         }
 
         if (!recovery.active) return // we aren't recording while handed off, so any config = the consumer
-        val consumerRecording = sessionIds.isNotEmpty()
+        // ...any config that isn't OURS. A config for our own stopped capture can outlive it (a call
+        // preempting the mic leaks one — `../../hey-jarvis/PHASE_G.md` §37), and counting that as "the
+        // consumer is still recording" makes the release edge — and therefore reclaim — unreachable
+        // forever. `MicContentionDetector` already knows which ids are ours; ask it.
+        val consumerRecording = sessionIds.any { !contention.isOurs(it) }
         if (recovery.onForeignRecording(consumerRecording)) {
             if (yieldedByDetection) {
                 // Detection path only: the consumer was already recording when we stood down, so pausing OUR
@@ -187,6 +217,7 @@ internal class MicArbiter(
         scheduler.removeCallbacks(reclaimConfirm) // a fresh handoff supersedes any pending reclaim
         contention.onCaptureStopped()
         yieldedByDetection = consumerAlreadyRecording
+        stoodDownAtMs = now()
         DebugLog.log("WAKE → handing off ($reason)")
         if (gate.onHandoff()) DebugLog.log("gate: handoff=true → ${gate.status}")
         // Wake handoff (false): consumer starts AFTER we release → WAITING, and reclaim is immediate.
@@ -211,5 +242,10 @@ internal class MicArbiter(
         // later before reclaiming — absorbs the transient empty-config callback emitted while our own capture
         // stops. The wake-handoff path reclaims immediately (no transient-empty race).
         internal const val RECLAIM_DEBOUNCE_MS = 500L
+
+        // Upper bound on a detection stand-down with nobody actually recording: past this, [rescueStuckHandoff]
+        // takes the mic back rather than waiting for a release edge that may never arrive. Well clear of
+        // [RECLAIM_DEBOUNCE_MS] so it cannot fire on the transient empty while our own capture stops.
+        internal const val DETECTION_RECLAIM_GRACE_MS = 5_000L
     }
 }

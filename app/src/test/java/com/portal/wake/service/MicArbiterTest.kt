@@ -213,6 +213,98 @@ class MicArbiterTest {
         assertEquals(0, sch.countWithDelay(MicArbiter.RECLAIM_DEBOUNCE_MS))
     }
 
+    // --- the post-call deafness regression (../../hey-jarvis/PHASE_G.md §37) ---
+
+    @Test
+    fun postCall_resumeWithLeakedOwnConfig_keepsListening() {
+        // 🔴 Measured on device 2026-07-26 and it cost ~1.1 h of task C collection. A call preempts our
+        // capture; the framework never emits `rec stop`, so the config for our own stopped session leaks;
+        // on resume the callback reports [leaked-ours, fresh-ours] and the app stood down against itself —
+        // permanently, because reclaim then waited on an empty list that could never arrive.
+        arbiter.start()
+        arbiter.onRecordingConfigs(listOf(2825)) // our capture, seeded
+
+        audio.mode = MODE_IN_CALL
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // call takes the mic; 2825 LEAKS
+        assertFalse(ctl.isCapturing)
+
+        clock = 90_000
+        audio.mode = MODE_NORMAL
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // call ends → we resume as session 2873
+        assertTrue(ctl.isCapturing)
+
+        arbiter.onRecordingConfigs(listOf(2825, 2873)) // both ours → must keep listening
+        assertTrue(ctl.isCapturing)
+    }
+
+    @Test
+    fun borrowedWithALeakedOwnConfig_stillReclaims() {
+        // Reclaim used to require an EMPTY config list. A leaked config for our own stopped capture never
+        // goes away, so the release edge was unreachable and the app stayed deaf even after the consumer
+        // had finished.
+        arbiter.start()
+        arbiter.onRecordingConfigs(listOf(2825)) // seed ours
+        clock = 100
+        arbiter.onRecordingConfigs(listOf(77)) // a real consumer replaced us → detection stand-down
+        assertFalse(ctl.isCapturing)
+
+        // The consumer stops, but OUR leaked config is still published — the list never empties.
+        audio.hasActiveRecording = false
+        arbiter.onRecordingConfigs(listOf(2825))
+        assertEquals(1, sch.countWithDelay(MicArbiter.RECLAIM_DEBOUNCE_MS))
+
+        sch.fire(MicArbiter.RECLAIM_DEBOUNCE_MS)
+        assertTrue(ctl.isCapturing)
+    }
+
+    @Test
+    fun stuckDetectionStandDown_isRescuedAfterTheGrace() {
+        // Defence in depth for the *class* of the bug: a release edge that simply never arrives. Bounded,
+        // and only when nothing at all is recording.
+        arbiter.start()
+        arbiter.onRecordingConfigs(listOf(1))
+        clock = 100
+        arbiter.onRecordingConfigs(listOf(2)) // detection stand-down
+        assertFalse(ctl.isCapturing)
+
+        audio.hasActiveRecording = false // nobody is recording, and no further callback ever comes
+        clock = 100 + MicArbiter.DETECTION_RECLAIM_GRACE_MS - 1
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS)
+        assertFalse(ctl.isCapturing) // still inside the grace — must not re-grab yet
+
+        clock = 100 + MicArbiter.DETECTION_RECLAIM_GRACE_MS
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS)
+        assertTrue(ctl.isCapturing)
+    }
+
+    @Test
+    fun rescueNeverStealsTheMicFromALiveConsumer() {
+        // A turn can be minutes long. The escape must key on "nobody is recording", never on elapsed time.
+        arbiter.start()
+        arbiter.onRecordingConfigs(listOf(1))
+        clock = 100
+        arbiter.onRecordingConfigs(listOf(2)) // detection stand-down
+        audio.hasActiveRecording = true // consumer genuinely holds the mic
+
+        clock = 100 + MicArbiter.DETECTION_RECLAIM_GRACE_MS * 10
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS)
+        assertFalse(ctl.isCapturing)
+    }
+
+    @Test
+    fun rescueDoesNotApplyToAWakeHandoff() {
+        // A wake handoff is the snappy path (immediate reclaim on the release edge) and every recall
+        // measurement in the project depends on it. The escape is deliberately scoped to the detection
+        // path, which is the one that was observed to wedge.
+        arbiter.start()
+        arbiter.standDown("wake") // consumerAlreadyRecording = false
+        audio.hasActiveRecording = false
+
+        clock = MicArbiter.DETECTION_RECLAIM_GRACE_MS * 10
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS)
+        assertFalse(ctl.isCapturing)
+    }
+
     private companion object {
         const val MODE_NORMAL = 0
         const val MODE_IN_CALL = 2 // AudioManager.MODE_IN_CALL — any non-normal mode reads as in-call
