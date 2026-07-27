@@ -292,15 +292,52 @@ class MicArbiterTest {
     }
 
     @Test
-    fun rescueDoesNotApplyToAWakeHandoff() {
-        // A wake handoff is the snappy path (immediate reclaim on the release edge) and every recall
-        // measurement in the project depends on it. The escape is deliberately scoped to the detection
-        // path, which is the one that was observed to wedge.
+    fun wakeHandoff_consumerThatNeverRecords_isRescued() {
+        // 🔴 Observed on device 2026-07-26 (PHASE_G.md §42). The wake fired and handed off; the consumer
+        // hit "no credential → cannot start" and never opened the mic. WAITING_FOR_CONSUMER has no later
+        // edge to wait for, so one failed conversation left the device permanently deaf.
         arbiter.start()
         arbiter.standDown("wake") // consumerAlreadyRecording = false
-        audio.hasActiveRecording = false
+        assertFalse(ctl.isCapturing)
+        audio.hasActiveRecording = false // the consumer never records
 
-        clock = MicArbiter.DETECTION_RECLAIM_GRACE_MS * 10
+        clock = MicArbiter.WAKE_CONSUMER_TIMEOUT_MS - 1
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS)
+        assertFalse(ctl.isCapturing) // still inside the window a consumer may legitimately take to start
+
+        clock = MicArbiter.WAKE_CONSUMER_TIMEOUT_MS
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS)
+        assertTrue(ctl.isCapturing)
+    }
+
+    @Test
+    fun wakeHandoff_rescueNeverInterruptsALiveTurn() {
+        // A turn may be minutes long. The escape keys on "nobody is recording", never on elapsed time.
+        arbiter.start()
+        arbiter.standDown("wake")
+        arbiter.onRecordingConfigs(listOf(7)) // consumer took the mic → BORROWED
+        audio.hasActiveRecording = true
+
+        clock = MicArbiter.WAKE_CONSUMER_TIMEOUT_MS * 20
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS)
+        assertFalse(ctl.isCapturing)
+
+        // And the normal edge still reclaims immediately — the snappy path is untouched.
+        audio.hasActiveRecording = false
+        arbiter.onRecordingConfigs(emptyList())
+        assertTrue(ctl.isCapturing)
+    }
+
+    @Test
+    fun wakeHandoff_rescueDoesNotPreemptAPromptConsumer() {
+        // The consumer starts well inside the timeout, as a warm resident service does. Nothing fires.
+        arbiter.start()
+        arbiter.standDown("wake")
+
+        clock = 800
+        arbiter.onRecordingConfigs(listOf(7)) // consumer up in 0.8 s
+        audio.hasActiveRecording = true
+        clock = MicArbiter.WAKE_CONSUMER_TIMEOUT_MS + 1
         sch.fire(MicArbiter.STANDDOWN_POLL_MS)
         assertFalse(ctl.isCapturing)
     }

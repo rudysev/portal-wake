@@ -111,22 +111,30 @@ internal class MicArbiter(
     }
 
     /**
-     * **Bounded escape from a detection stand-down.** Reclaim is otherwise driven purely by an *edge* — the
-     * config callback reporting that the consumer stopped — and an edge that never arrives leaves the app
-     * deaf with no timeout and nothing to recover it. That is not hypothetical: it happened on 2026-07-26
-     * and cost ~1.1 h of task C collection (`../../hey-jarvis/PHASE_G.md` §37). The ownership fix in
-     * [MicContentionDetector] closes the cause found there; this closes the *class* of it, for any consumer
-     * whose release we simply never see.
+     * **Bounded escape from a stand-down that will never see its release edge.** Reclaim is otherwise driven
+     * purely by an *edge* — the config callback reporting that the consumer stopped — and an edge that never
+     * arrives leaves the app deaf with no timeout and nothing to recover it.
      *
-     * Only after [DETECTION_RECLAIM_GRACE_MS], which comfortably clears the transient empty-config callback
-     * that [RECLAIM_DEBOUNCE_MS] exists for — so this cannot re-grab the mic from a consumer that is merely
-     * mid-start.
+     * **Both stand-down paths have now done this on real hardware, hours apart** (`PHASE_G.md` §37, §42):
+     *  - **detection** — a call leaked a config for our *own* stopped capture, so the list never emptied;
+     *  - **wake handoff** — the consumer was handed the mic, hit `no credential → cannot start`, and so
+     *    **never recorded at all**. `WAITING_FOR_CONSUMER` has no later edge to wait for. One failed
+     *    conversation turned into a permanently deaf device.
+     *
+     * The rule is the same for both and keys on **"nobody is recording"**, never on elapsed time alone: a
+     * turn may be minutes long, and while the consumer holds the mic we must not touch it. Only the timeout
+     * differs, because the two paths have different legitimate quiet windows — a detection stand-down means
+     * someone was *already* recording, whereas a wake handoff is quiet by construction until the consumer
+     * starts, so it gets the longer [WAKE_CONSUMER_TIMEOUT_MS].
      */
     private fun rescueStuckHandoff() {
-        if (!yieldedByDetection || !recovery.active) return
-        if (now() - stoodDownAtMs < DETECTION_RECLAIM_GRACE_MS) return
-        if (audio.hasActiveRecording) return
-        DebugLog.log("stand-down stuck ${now() - stoodDownAtMs}ms with no recorder → reclaiming")
+        if (!recovery.active) return
+        val quietFor = now() - stoodDownAtMs
+        val limit = if (yieldedByDetection) DETECTION_RECLAIM_GRACE_MS else WAKE_CONSUMER_TIMEOUT_MS
+        if (quietFor < limit) return
+        if (audio.hasActiveRecording) return // consumer is mid-turn — never steal it
+        val why = if (yieldedByDetection) "detection stand-down" else "wake handoff"
+        DebugLog.log("$why stuck ${quietFor}ms with no recorder → reclaiming")
         scheduler.removeCallbacks(reclaimConfirm)
         reclaimNow()
     }
@@ -247,5 +255,12 @@ internal class MicArbiter(
         // takes the mic back rather than waiting for a release edge that may never arrive. Well clear of
         // [RECLAIM_DEBOUNCE_MS] so it cannot fire on the transient empty while our own capture stops.
         internal const val DETECTION_RECLAIM_GRACE_MS = 5_000L
+
+        // Same bound for a WAKE handoff, but longer: this path is legitimately quiet from the moment we
+        // release until the consumer starts recording, so the timeout must clear a consumer cold start with
+        // room to spare. Past it, with nothing recording, the consumer never took the mic (it crashed, or
+        // refused the turn — a missing API key does exactly this) and waiting forever is strictly worse than
+        // listening again. Generous against a warm resident service that normally starts in well under 1 s.
+        internal const val WAKE_CONSUMER_TIMEOUT_MS = 10_000L
     }
 }
