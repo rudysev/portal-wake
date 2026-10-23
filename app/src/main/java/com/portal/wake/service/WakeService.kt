@@ -319,7 +319,8 @@ private class AudioManagerGate(private val audioManager: AudioManager) : MicArbi
     override val inCall: Boolean get() = audioManager.mode != AudioManager.MODE_NORMAL
 
     // Presence check only (the reclaim confirm asks "is anyone recording?", not who) — no list allocation,
-    // and the clientAudioSessionId projection lives in exactly one place: the recordingCallback shell.
+    // and the clientAudioSessionId projection lives in exactly one place: the recordingCallback shell. The list
+    // is @NonNull in the SDK (and AOSP builds a fresh one on API 28/29), so isNotEmpty() needs no null check.
     override val hasActiveRecording: Boolean
         get() = audioManager.activeRecordingConfigurations.isNotEmpty()
 }
