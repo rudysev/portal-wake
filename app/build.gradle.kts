@@ -27,7 +27,7 @@ android {
     targetCompatibility = JavaVersion.VERSION_11
   }
   testOptions {
-    // Use the bundled org.json (testImplementation) instead of android.jar's throwing stubs, so the
+    // Use the bundled org.json (testRuntimeOnly) instead of android.jar's throwing stubs, so the
     // Vosk-JSON parser can be exercised in plain JVM unit tests.
     unitTests.isReturnDefaultValues = true
   }
@@ -46,9 +46,11 @@ dependencies {
   implementation("com.portal:commons")
   // Shared Android shells (AudioRecordPcmDevice); composite-build substituted from ./commons-android.
   implementation("com.portal:commons-android")
-  // On-device wake-word recognition — free, keyless, offline, no Google Mobile Services.
-  implementation(libs.vosk.android)
+  // On-device wake-word recognition — free, keyless, offline, no Google Mobile Services. Runtime-only: the app
+  // never calls Vosk itself (commons-android does), it only ships the native library.
+  runtimeOnly(libs.vosk.android)
 
   testImplementation(libs.junit)
-  testImplementation(libs.json)
+  // Real org.json at test runtime only: the code under test calls it, the tests never reference it.
+  testRuntimeOnly(libs.json)
 }
