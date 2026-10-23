@@ -30,10 +30,13 @@
         </intent>
     </queries>
 
+    <!-- tools:ignore MissingApplicationIcon: headless by design (no Activity, no launcher entry), so there is
+         nowhere an icon would show except the system app list, where the default is fine. -->
     <application
         android:allowBackup="true"
         android:label="@string/app_name"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        tools:ignore="MissingApplicationIcon">
 
         <!-- Always-on foreground service hosting the wake engine. No Activity / no launcher: this app
              is intentionally invisible and runs only in the background. -->
