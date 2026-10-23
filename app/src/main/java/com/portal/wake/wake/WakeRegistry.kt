@@ -3,6 +3,7 @@ package com.portal.wake.wake
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
 import com.portal.commons.DebugLog
@@ -63,28 +64,31 @@ object WakeRegistry {
 
         @Suppress("DEPRECATION", "QueryPermissionsNeeded")
         val resolved = pm.queryBroadcastReceivers(intent, PackageManager.GET_META_DATA)
-        buildList {
-            for (ri in resolved) {
-                val info = ri.activityInfo ?: continue
-                val meta = info.metaData ?: continue
-                val component = ComponentName(info.packageName, info.name)
-                // One receiver declares one wake word (more words = more receivers). Build it from the named
-                // meta-data fields; WakeSpec reports any mistake (with the bad field) so a developer can fix it.
-                val phrase = meta.text(WakeContract.META_PHRASE)
-                val word = WakeSpec.build(
-                    phrase = phrase,
-                    id = meta.text(WakeContract.META_ID),
-                    minConfidence = meta.text(WakeContract.META_MIN_CONFIDENCE),
-                    defaultMinConf = WakeMatcher.BASELINE_CONF,
-                    onProblem = { reason -> DebugLog.log("registry: wake plugin ${component.flattenToShortString()}: $reason") },
-                ) ?: continue
-                warnIfMisdeclared(component, phrase, word)
-                add(WakeTarget(word, component, info.packageName))
-            }
-        }
+        resolved
+            .mapNotNull { it.activityInfo }
+            .mapNotNull { info -> info.metaData?.let { meta -> pluginTarget(info, meta) } }
     }.getOrElse {
         DebugLog.log("registry query failed: ${it.message}")
         emptyList()
+    }
+
+    /** The wake target one plugin receiver declares in its [meta]-data, or null if the declaration is rejected. */
+    private fun pluginTarget(info: ActivityInfo, meta: Bundle): WakeTarget? {
+        val component = ComponentName(info.packageName, info.name)
+        // One receiver declares one wake word (more words = more receivers). Build it from the named
+        // meta-data fields; WakeSpec reports any mistake (with the bad field) so a developer can fix it.
+        val phrase = meta.text(WakeContract.META_PHRASE)
+        val word = WakeSpec.build(
+            phrase = phrase,
+            id = meta.text(WakeContract.META_ID),
+            minConfidence = meta.text(WakeContract.META_MIN_CONFIDENCE),
+            defaultMinConf = WakeMatcher.BASELINE_CONF,
+            onProblem = { reason -> DebugLog.log("registry: wake plugin ${component.flattenToShortString()}: $reason") },
+        )
+        return word?.let {
+            warnIfMisdeclared(component, phrase, it)
+            WakeTarget(it, component, info.packageName)
+        }
     }
 
     /**
