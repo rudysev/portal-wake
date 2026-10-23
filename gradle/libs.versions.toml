@@ -1,12 +1,14 @@
 [versions]
 agp = "9.2.1"
-coreKtx = "1.13.1"
+core = "1.13.1"
+annotation = "1.6.0"
 vosk = "0.3.75"
 junit = "4.13.2"
 json = "20240303"
 
 [libraries]
-androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-core = { group = "androidx.core", name = "core", version.ref = "core" }
+androidx-annotation = { group = "androidx.annotation", name = "annotation", version.ref = "annotation" }
 vosk-android = { group = "com.alphacephei", name = "vosk-android", version.ref = "vosk" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 json = { group = "org.json", name = "json", version.ref = "json" }
