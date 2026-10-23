@@ -83,6 +83,12 @@ internal class MicArbiter(
 
     private val shouldCapture: Boolean get() = !pausedForCall && !pausedForHandoff
 
+    // The retry backoff after capture losses with nobody else recording (see [onCaptureLost]): how many losses in
+    // a row, the delay before the latest retry, and the polls left until it ([reconcile] holds the start till 0).
+    private var failedStarts = 0
+    private var retryDelayMs = 0L
+    private var pollsUntilRetry = 0L
+
     /** Whether we hold (or have requested) the mic. Changed only via [setCapturing]. */
     var isCapturing = false
         private set
@@ -119,8 +125,13 @@ internal class MicArbiter(
      */
     private val callPoll = object : Runnable {
         override fun run() {
+            if (isCapturing && failedStarts > 0) { // a retry ran a whole poll with no loss: capture is back
+                DebugLog.log("capture resumed after $failedStarts failed starts")
+                resetRetryBackoff()
+            }
+            if (pollsUntilRetry > 0) pollsUntilRetry--
             setPausedForCall(audio.inCall)
-            reconcile() // also retries after a capture loss on the next tick
+            reconcile() // also retries after a capture loss, once its backoff has passed
             scheduler.postDelayed(this, STANDDOWN_POLL_MS)
         }
     }
@@ -146,6 +157,7 @@ internal class MicArbiter(
         pausedForCall = false
         pausedForHandoff = false
         recovery.reset()
+        resetRetryBackoff()
     }
 
     /**
@@ -185,7 +197,8 @@ internal class MicArbiter(
     /**
      * The single place capture is started or paused. Brings capture in line with the pause reasons via the
      * [CaptureController]: start it when nothing should pause us (marking capture running as soon as the start is
-     * requested; a start that fails comes back via [onCaptureLost]), pause it otherwise.
+     * requested; a start that fails comes back via [onCaptureLost]), pause it otherwise. A start is held while a
+     * capture-loss retry is backing off.
      *
      * **A voice call always wins.** Immediately before any start (poll, reclaim, retry) the live call state
      * is re-read, closing the up-to-[STANDDOWN_POLL_MS] window between a call starting and the poll seeing
@@ -194,6 +207,7 @@ internal class MicArbiter(
     fun reconcile() {
         val want = shouldCapture
         if (want && !isCapturing) {
+            if (pollsUntilRetry > 0) return // backing off after a capture loss; a later poll retries
             if (audio.inCall) {
                 setPausedForCall(true, "live check before start")
                 return
@@ -213,7 +227,10 @@ internal class MicArbiter(
      *    (BORROWED directly, debounced confirmed reclaim) and wait for it to release, rather than polling
      *    against it (which would run the mic liberator every tick);
      *  - **nobody is recording** → the mic is unavailable to us (not granted) or capture died (dropped) with no
-     *    one to wait for: let the poll's reconcile retry. The log names the [loss]'s cause and reason.
+     *    one to wait for: let the poll's reconcile retry. The log names the [loss]'s cause and reason. The first
+     *    loss retries on the next poll; each further loss in a row doubles the delay, up to
+     *    [RETRY_BACKOFF_CAP_MS]. A retry that runs a whole poll without a loss ends the streak, as do a
+     *    stand-down and a call.
      */
     fun onCaptureLost(loss: CaptureLoss) {
         setCapturing(false)
@@ -221,7 +238,10 @@ internal class MicArbiter(
             DebugLog.log("capture lost — another app is recording → waiting for it to release")
             standDown("capture lost to another recorder", consumerAlreadyRecording = true)
         } else {
-            DebugLog.log("capture lost (${loss.label()}) → retrying in $STANDDOWN_POLL_MS ms")
+            failedStarts++
+            retryDelayMs = if (failedStarts == 1) STANDDOWN_POLL_MS else minOf(retryDelayMs * 2, RETRY_BACKOFF_CAP_MS)
+            pollsUntilRetry = retryDelayMs / STANDDOWN_POLL_MS
+            DebugLog.log("capture lost (${loss.label()}) → retrying in $retryDelayMs ms")
         }
     }
 
@@ -234,11 +254,19 @@ internal class MicArbiter(
     fun standDown(reason: String, consumerAlreadyRecording: Boolean = false) {
         scheduler.removeCallbacks(reclaimConfirm) // a fresh handoff supersedes any pending reclaim
         DebugLog.log("WAKE → handing off ($reason)")
+        resetRetryBackoff() // the mic changes hands; a later loss starts a fresh streak
         setPausedForHandoff(true)
         // Wake handoff (false): consumer starts AFTER we release → WAITING, and reclaim is immediate.
         // Foreign-mic detection (true): consumer already holds the mic → BORROWED directly, reclaim confirmed.
         recovery.onHandoff(consumerAlreadyRecording)
         reconcile() // pauses capture, freeing the slot
+    }
+
+    /** Forget the capture-loss streak, so the next loss retries on the next poll again. */
+    private fun resetRetryBackoff() {
+        failedStarts = 0
+        retryDelayMs = 0L
+        pollsUntilRetry = 0L
     }
 
     /** Take the mic back: clear recovery + the handoff pause reason and reconcile (starts unless a call holds). */
@@ -262,6 +290,7 @@ internal class MicArbiter(
     private fun setPausedForCall(inCall: Boolean, trigger: String? = null) {
         if (pausedForCall == inCall) return
         pausedForCall = inCall
+        if (inCall) resetRetryBackoff() // a call always wins; capture resumes as soon as it ends
         DebugLog.log("gate: call=$inCall${trigger?.let { " ($it)" }.orEmpty()} → $status")
     }
 
@@ -272,12 +301,6 @@ internal class MicArbiter(
         DebugLog.log("gate: handoff=$handoff → $status")
     }
 
-    /** "not granted: microphone unavailable": the loss's cause, as the glossary names it, and its reason. */
-    private fun CaptureLoss.label(): String = when (this) {
-        is CaptureLoss.NotGranted -> "not granted"
-        is CaptureLoss.Dropped -> "dropped"
-    } + ": " + reason
-
     companion object {
         // Re-check the in-call state (audio mode) this often (no mode-change event on API 28).
         internal const val STANDDOWN_POLL_MS = 250L
@@ -286,5 +309,15 @@ internal class MicArbiter(
         // later before reclaiming — absorbs the transient empty-config callback emitted while our own capture
         // stops. The wake-handoff path reclaims immediately (no transient-empty race).
         internal const val RECLAIM_DEBOUNCE_MS = 500L
+
+        // Consecutive capture losses with nobody else recording retry after STANDDOWN_POLL_MS, then double the
+        // delay up to this cap, so an unavailable mic isn't hammered (and the log isn't flooded) every poll.
+        internal const val RETRY_BACKOFF_CAP_MS = 4_000L
     }
 }
+
+/** "not granted: microphone unavailable": the loss's cause, as the glossary names it, and its reason. */
+private fun CaptureLoss.label(): String = when (this) {
+    is CaptureLoss.NotGranted -> "not granted"
+    is CaptureLoss.Dropped -> "dropped"
+} + ": " + reason

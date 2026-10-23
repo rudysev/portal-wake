@@ -347,7 +347,7 @@ class MicArbiterTest {
         assertFalse(arbiter.isCapturing)
         assertEquals(1, ctl.startCount)
 
-        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // next tick retries, with no debounce or backoff
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // a first loss: next tick retries, no debounce or backoff
         assertTrue(arbiter.isCapturing)
         assertEquals(2, ctl.startCount)
         assertEquals(0, sch.countWithDelay(MicArbiter.RECLAIM_DEBOUNCE_MS))
@@ -399,4 +399,93 @@ class MicArbiterTest {
         assertFalse(arbiter.isCapturing)
         assertEquals(0, ctl.pauseCount)
     }
+
+    /** Fire polls until the controller sees a new start; return how many polls that took. */
+    private fun pollsUntilNextStart(): Int {
+        val before = ctl.startCount
+        var polls = 0
+        while (ctl.startCount == before) {
+            check(polls < MAX_POLLS_PER_RETRY) { "no retry within $MAX_POLLS_PER_RETRY polls" }
+            sch.fire(MicArbiter.STANDDOWN_POLL_MS)
+            polls++
+        }
+        return polls
+    }
+
+    /** Lose capture with nobody else recording, then count the polls until the retry. */
+    private fun lossThenPollsUntilRetry(): Int {
+        arbiter.onCaptureLost(notGranted)
+        return pollsUntilNextStart()
+    }
+
+    @Test
+    fun consecutiveLosses_backOffTheRetry_doublingUpToFourSeconds() {
+        arbiter.start()
+
+        // 250 ms, 500 ms, 1 s, 2 s, then capped at 4 s — in 250 ms polls.
+        val polls = List(7) { lossThenPollsUntilRetry() }
+
+        assertEquals(listOf(1, 2, 4, 8, 16, 16, 16), polls)
+    }
+
+    @Test
+    fun aStartThatSurvivesAPoll_resetsTheBackoff() {
+        arbiter.start()
+        repeat(3) { lossThenPollsUntilRetry() } // backed off to 1 s
+
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // the retry outlives a poll with no loss → capture resumed
+
+        assertEquals(1, lossThenPollsUntilRetry()) // a later loss retries on the next poll again
+    }
+
+    @Test
+    fun aStartLostBeforeTheNextPoll_keepsBackingOff() {
+        arbiter.start()
+        lossThenPollsUntilRetry()
+
+        // The retry is lost before any poll sees it running: still a failed start, not a success.
+        assertEquals(2, lossThenPollsUntilRetry())
+    }
+
+    @Test
+    fun aHandoff_resetsTheBackoff_soTheReclaimStartsAtOnce() {
+        arbiter.start()
+        repeat(3) { lossThenPollsUntilRetry() }
+        arbiter.onCaptureLost(notGranted) // a 2 s backoff is pending
+
+        arbiter.standDown("wake")
+        arbiter.onRecordingConfigs(listOf(7)) // consumer records
+        arbiter.onRecordingConfigs(emptyList()) // consumer releases → reclaim
+
+        assertTrue(arbiter.isCapturing)
+        assertEquals(1, lossThenPollsUntilRetry())
+    }
+
+    @Test
+    fun aCall_resetsTheBackoff_soCaptureResumesWhenItEnds() {
+        arbiter.start()
+        repeat(3) { lossThenPollsUntilRetry() }
+        arbiter.onCaptureLost(notGranted) // a 2 s backoff is pending
+
+        audio.inCall = true
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // poll sees the call
+        audio.inCall = false
+
+        assertEquals(1, pollsUntilNextStart()) // call over → capture starts on that poll
+        assertEquals(1, lossThenPollsUntilRetry())
+    }
+
+    @Test
+    fun detach_resetsTheBackoff() {
+        arbiter.start()
+        repeat(3) { lossThenPollsUntilRetry() }
+        arbiter.onCaptureLost(notGranted) // a 2 s backoff is pending
+
+        arbiter.detach()
+        arbiter.start()
+
+        assertTrue(arbiter.isCapturing)
+    }
 }
+
+private const val MAX_POLLS_PER_RETRY = 100
