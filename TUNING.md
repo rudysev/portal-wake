@@ -60,7 +60,7 @@ the clean-phrase and cross-keyword gates — not the keyword floor — do the wo
   the clean-phrase and cross-keyword gates above can't catch (it isn't long, and carries no rival keyword).
   What distinguishes it from a real wake is the **"hey" confidence**: 0.66 here vs **0.96–1.00** for every
   genuine wake. Fixed by gating the preceding "hey" on `WakeMatcher.LEAD_MIN_CONF` (0.80) for strict routes —
-  present-but-weak no longer passes. The call audio reached the mic at all because `CallGate` reads the
+  present-but-weak no longer passes. The call audio reached the mic at all because the call stand-down reads the
   *Portal's* audio mode and so is blind to a call on a *separate phone*; the matcher floor is the backstop.
 
 - **Precision (a third failure mode: a clean phrase contaminated by `[unk]`).** A live false fire decoded

@@ -7,9 +7,8 @@ package com.portal.wake.wake
  * (neither reason holds).
  *
  * No Android here: `WakeService` feeds it events (a periodic audio-mode poll for calls; handoff start/end)
- * and reconciles the engine to [shouldCapture]. Mirrors [HandoffRecovery] / `CallGate` as unit-tested
- * decision logic. Mutators return whether a flag actually changed, so the caller can log per-reason
- * transitions.
+ * and reconciles the engine to [shouldCapture]. Mirrors [HandoffRecovery] as unit-tested decision logic.
+ * Mutators return whether a flag actually changed, so the caller can log per-reason transitions.
  */
 class CaptureGate {
     private var pausedForCall = false
@@ -26,7 +25,7 @@ class CaptureGate {
             else -> Status.LISTENING
         }
 
-    /** Set/clear the call reason (driven by the service's audio-mode poll). Returns true if it changed. */
+    /** Set/clear the call reason (driven by the call poll and the live check before each start). Returns true if it changed. */
     fun onCall(inCall: Boolean): Boolean {
         if (pausedForCall == inCall) return false
         pausedForCall = inCall

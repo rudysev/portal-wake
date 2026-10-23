@@ -361,7 +361,10 @@ private class HandlerScheduler(private val handler: Handler) : MicArbiter.Schedu
 
 /** Thin adapter exposing the Android [AudioManager] reads the arbiter needs as [MicArbiter.AudioGate]. */
 private class AudioManagerGate(private val audioManager: AudioManager) : MicArbiter.AudioGate {
-    override val mode: Int get() = audioManager.mode
+    // On this Portal a Messenger call drives the mode through MODE_RINGTONE → MODE_IN_CALL →
+    // MODE_IN_COMMUNICATION and back to MODE_NORMAL when it ends (verified on device). The mode is
+    // device-wide and independent of mic contention, so any non-normal mode = stand down for a call.
+    override val inCall: Boolean get() = audioManager.mode != AudioManager.MODE_NORMAL
 
     // Presence check only (the reclaim confirm asks "is anyone recording?", not who) — no list allocation,
     // and the clientAudioSessionId projection lives in exactly one place: the recordingCallback shell.
