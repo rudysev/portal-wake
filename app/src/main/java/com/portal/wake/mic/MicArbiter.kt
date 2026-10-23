@@ -1,23 +1,22 @@
-package com.portal.wake.service
+package com.portal.wake.mic
 
 import com.portal.commons.DebugLog
-import com.portal.wake.wake.HandoffRecovery
-import com.portal.wake.wake.HandoffRecovery.Reclaim
-import com.portal.wake.wake.MicContentionDetector
+import com.portal.wake.mic.HandoffRecovery.Reclaim
 
 /**
- * Owns the **mic-arbitration decision flow** that used to live inline in [WakeService]: it holds the two
- * capture pause reasons (call, handoff) and wires the pure coordinators ([HandoffRecovery],
- * [MicContentionDetector]) to two injected seams — a [Scheduler] (the controlling thread's delayed posts) and
- * an [AudioGate] (the audio signals it reads) — and drives capture start/pause through the [CaptureController]
- * seam. [WakeService] keeps the engine lifecycle, the match→consumer routing, and the thin Android adapters; this class is the
- * "should we be holding the mic right now" state machine.
+ * Owns the **mic-arbitration decision flow** that used to live inline in
+ * [com.portal.wake.service.WakeService]: it holds the two capture pause reasons (call, handoff) and wires the
+ * pure coordinators ([HandoffRecovery], [MicContentionDetector]) to two injected seams — a [Scheduler] (the
+ * controlling thread's delayed posts) and an [AudioGate] (the audio signals it reads) — and drives capture
+ * start/pause through the [CaptureController] seam. `WakeService` keeps the engine lifecycle, the
+ * match→consumer routing, and the thin Android adapters; this class is the "should we be holding the mic right
+ * now" state machine.
  *
  * **No Android framework types.** Everything Android (the `AudioManager` reads, the
  * `AudioRecordingConfiguration` callback, the `Handler`) lives behind [AudioGate]/[Scheduler] in
- * [WakeService]; the arbiter's only non-arbiter dependency is commons' pure-JVM `DebugLog`. So the whole
- * arbiter — including the historically churn-prone reclaim debounce — is
- * exercised in plain-JVM unit tests with fakes + an injected [now] clock (see `MicArbiterTest`).
+ * `WakeService`; the arbiter's only non-arbiter dependency is commons' pure-JVM `DebugLog`. So the whole
+ * arbiter — including the historically churn-prone reclaim debounce — is exercised in plain-JVM unit tests
+ * with fakes + an injected [now] clock (see `MicArbiterTest`).
  *
  * **Threading.** The seams are driven on one controlling thread (the service's main `Handler` in prod): the
  * recording callback is delivered on it, the poll re-posts to it, and the reclaim debounce is a delayed post
@@ -40,9 +39,10 @@ internal class MicArbiter(
 ) {
 
     /**
-     * The engine-side seam: [MicArbiter] *decides*, [WakeService] *applies* the decision to the real
-     * [com.portal.commons.audio.WakeMicEngine]. Keeping the engine out of the arbiter is what lets the
-     * arbitration logic be reasoned about (and, with a fake controller + clock, unit-tested) on its own.
+     * The engine-side seam: [MicArbiter] *decides*, [com.portal.wake.service.WakeService] *applies* the
+     * decision to the real [com.portal.commons.audio.WakeMicEngine]. Keeping the engine out of the arbiter is
+     * what lets the arbitration logic be reasoned about (and, with a fake controller + clock, unit-tested) on
+     * its own.
      */
     interface CaptureController {
         /**
@@ -133,11 +133,11 @@ internal class MicArbiter(
     }
 
     /**
-     * Fully reset, so the arbiter is left inert and safe to reuse: [WakeService] detaches it when the wake set
-     * empties and calls [start] again when it refills. Cancels its own queued
+     * Fully reset, so the arbiter is left inert and safe to reuse: [com.portal.wake.service.WakeService]
+     * detaches it when the wake set empties and calls [start] again when it refills. Cancels its own queued
      * posts ([callPoll]/[reclaimConfirm]) and clears both pause reasons and every coordinator.
-     * The Android recording-callback is unregistered by [WakeService] (which owns it); this is the pure half of
-     * teardown.
+     * The Android recording-callback is unregistered by `WakeService` (which owns it); this is the pure half
+     * of teardown.
      */
     fun detach() {
         scheduler.removeCallbacks(callPoll)
@@ -150,7 +150,7 @@ internal class MicArbiter(
 
     /**
      * Handle a recording-config change (the body of the old `AudioRecordingCallback`, now fed by
-     * [WakeService]'s adapter with just the session ids). Two uses, never mixed:
+     * [com.portal.wake.service.WakeService]'s adapter with just the session ids). Two uses, never mixed:
      *  - **Contention yield** ([contention.active]): we *are* recording — a foreign session id means stand down.
      *  - **Handoff recovery** ([HandoffRecovery.onForeignRecording]): we aren't recording, so any config is the
      *    consumer — act on recovery's [Reclaim] decision when they stop.

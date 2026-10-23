@@ -18,6 +18,7 @@ import com.portal.commons.audio.WakeDetectors
 import com.portal.commons.audio.WakeEvent
 import com.portal.commons.audio.WakeMicConfig
 import com.portal.commons.audio.WakeMicEngine
+import com.portal.wake.mic.MicArbiter
 import com.portal.wake.system.Falcon
 import com.portal.wake.system.MicLiberator
 import com.portal.wake.wake.WakeContract
@@ -81,7 +82,7 @@ class WakeService :
      * and is kept for future re-investigation (e.g. on an unlocked device).
      *
      * We deliberately do **not** try to identify *which* config is ours: on this Portal the session ids in the
-     * callback don't match our `AudioRecord`'s (the same reason [com.portal.wake.wake.MicContentionDetector]
+     * callback don't match our `AudioRecord`'s (the same reason [com.portal.wake.mic.MicContentionDetector]
      * seeds rather than compares), so we log the whole picture. Pure logging; it is **not** fed to the arbiter.
      */
     @RequiresApi(Build.VERSION_CODES.Q)

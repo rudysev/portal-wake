@@ -1,4 +1,4 @@
-package com.portal.wake.wake
+package com.portal.wake.mic
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

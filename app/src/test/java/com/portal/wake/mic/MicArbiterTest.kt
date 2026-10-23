@@ -1,4 +1,4 @@
-package com.portal.wake.service
+package com.portal.wake.mic
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

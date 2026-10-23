@@ -1,4 +1,4 @@
-package com.portal.wake.wake
+package com.portal.wake.mic
 
 /**
  * Decides **when to reclaim the mic** after portal-wake has handed it off — purely from whether the consumer
@@ -20,7 +20,7 @@ package com.portal.wake.wake
  *
  * Pure and deterministic → unit-tested. Drive it from an `AudioManager.AudioRecordingCallback`.
  */
-class HandoffRecovery {
+internal class HandoffRecovery {
 
     /** What the caller should do after a foreign-recording change. */
     enum class Reclaim {
