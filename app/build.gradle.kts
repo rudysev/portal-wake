@@ -33,6 +33,11 @@ android {
   }
 }
 
+kotlin {
+  // Keep the build warning-free: any compiler warning fails compilation.
+  compilerOptions { allWarningsAsErrors.set(true) }
+}
+
 dependencies {
   implementation(libs.androidx.core.ktx)
   // Shared utilities (DebugLog/PcmCaptureSession/PcmCaptureFormat); composite-build substituted from ./commons.
