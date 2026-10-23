@@ -289,6 +289,30 @@ class MicArbiterTest {
     }
 
     @Test
+    fun detachThenStart_ignoresALateLostCapture_andReSeedsCallState() {
+        arbiter.start()
+        arbiter.standDown("wake") // mid-handoff when the wake set empties
+        arbiter.detach() // the service then closes the engine
+        val pausesAtDetach = ctl.pauseCount
+
+        audio.hasActiveRecording = true // the consumer still holds the mic
+        arbiter.onCaptureLost() // the closed engine's late stopped callback reaches a detached arbiter
+        assertEquals(pausesAtDetach, ctl.pauseCount) // no-op: no pause, no stand-down armed
+        assertEquals(0, sch.countWithDelay(MicArbiter.STANDDOWN_POLL_MS))
+
+        audio.hasActiveRecording = false
+        audio.inCall = true // a call began while detached
+        arbiter.start() // the wake set is non-empty again: engine rebuilt, arbiter started
+        assertFalse(arbiter.isCapturing) // call state re-seeded, not stale
+        assertEquals(1, sch.countWithDelay(MicArbiter.STANDDOWN_POLL_MS)) // poll re-armed, exactly once
+
+        audio.inCall = false
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // call over → capture starts (no leftover handoff pause)
+        assertTrue(arbiter.isCapturing)
+        assertEquals(2, ctl.startCount)
+    }
+
+    @Test
     fun standDown_supersedesAPendingReclaimDebounce() {
         arbiter.start()
         arbiter.onRecordingConfigs(listOf(1)) // seed
