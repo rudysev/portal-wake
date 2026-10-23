@@ -46,8 +46,8 @@ internal class MicArbiter(
      */
     interface CaptureController {
         /**
-         * Request a capture start. The mic is acquired asynchronously; a busy mic, a device fault or a refused
-         * start (a wedged session) surfaces later as a capture loss via [onCaptureLost].
+         * Request a capture start. The mic is acquired asynchronously; a busy mic or a device fault surfaces later
+         * as a capture loss via [onCaptureLost].
          */
         fun startCapture()
 
@@ -219,7 +219,7 @@ internal class MicArbiter(
             DebugLog.log("capture lost — another app is recording → waiting for it to release")
             standDown("capture lost to another recorder", consumerAlreadyRecording = true)
         } else {
-            DebugLog.log("capture lost (device fault or refused start) → retrying on the next poll")
+            DebugLog.log("capture lost (device fault) → retrying on the next poll")
         }
     }
 
