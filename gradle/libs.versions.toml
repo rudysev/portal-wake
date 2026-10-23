@@ -6,6 +6,10 @@ vosk = "0.3.75"
 junit = "4.13.2"
 json = "20240303"
 
+# Stay on 3.18.x while Kotlin is 2.2.x: 3.19's kotlin-bom 2.4.0 upgrades kotlin-daemon-client past KGP 2.2.10,
+# and the Kotlin daemon fails (NoSuchMethodError).
+dependencyAnalysis = "3.18.0"
+
 [libraries]
 androidx-core = { group = "androidx.core", name = "core", version.ref = "core" }
 androidx-annotation = { group = "androidx.annotation", name = "annotation", version.ref = "annotation" }
@@ -15,3 +19,4 @@ json = { group = "org.json", name = "json", version.ref = "json" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+dependency-analysis = { id = "com.autonomousapps.dependency-analysis", version.ref = "dependencyAnalysis" }

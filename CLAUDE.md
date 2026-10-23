@@ -135,6 +135,12 @@ npx -y @meta-quest/hzdb adb shell "cat /sdcard/Android/data/com.portal.wake/file
 when a green `portal-commons` run dispatches `portal-commons-green`. It checks out `portal-wake` and
 `portal-commons@main` side by side so that `includeBuild("../portal-commons")` resolves.
 
+A separate `build-health` job runs `./gradlew buildHealth` (the `com.autonomousapps.dependency-analysis` plugin)
+and fails on any dependency advice: unused, used-but-undeclared or wrongly-configured dependencies. It is not part
+of `check` or the hooks, because the advice changes rarely and the analysis is slow. It analyses only this build's
+`:app`; the included `../portal-commons` build has its own job. Run `./gradlew buildHealth` yourself after changing
+dependencies; the report is at `build/reports/dependency-analysis/build-health-report.txt`.
+
 ## Agent skills
 
 ### Issue tracker

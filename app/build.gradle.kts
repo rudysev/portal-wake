@@ -2,6 +2,7 @@ plugins {
   // AGP 9 bundles Kotlin support and registers the `kotlin` extension itself, so the standalone
   // org.jetbrains.kotlin.android plugin must NOT be applied (it double-registers and fails).
   alias(libs.plugins.android.application)
+  alias(libs.plugins.dependency.analysis) // `buildHealth` advice; see the root build
 }
 
 android {
