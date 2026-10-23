@@ -86,7 +86,7 @@ repo, so see `app/src/main/assets/model-en-us/README.md` for the one-time downlo
 (If the model is missing the app still builds and runs — it just listens for nothing, no crash.)
 
 Verify a change with `./gradlew check` (unit tests, Android Lint, detekt and ktlint; `./gradlew formatKotlin` fixes
-style). `./setup.sh` turns on the repo's git hooks (`git config core.hooksPath .githooks`): `pre-commit` runs the
+style). Turn on the repo's git hooks once per clone with `git config core.hooksPath .githooks`: `pre-commit` runs the
 ktlint and detekt CLIs on staged Kotlin files and shellcheck on staged shell scripts, and `pre-push` runs
 `./gradlew check`. Install the CLIs with `brew install ktlint shellcheck`, plus detekt 2.0.0-alpha.6's `detekt-cli`
 from

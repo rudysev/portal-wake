@@ -126,7 +126,7 @@ git submodule update --init --recursive   # from the portal-apps workspace: pull
 # and build with a JDK 17 or 21 toolchain:
 ./gradlew check          # verify: unit tests + Android Lint + detekt + ktlint (kotlinter); formatKotlin fixes style
 ./gradlew assembleDebug
-./setup.sh   # install + grant mic + start headless + free the mic slot; also enables .githooks
+./setup.sh   # install + grant mic + start headless + free the mic slot
 npx -y @meta-quest/hzdb adb shell "cat /sdcard/Android/data/com.portal.wake/files/debug.txt"
 ```
 
@@ -154,7 +154,7 @@ specified"; run the build with `--info` to see the warnings themselves.
 
 ## Hooks
 
-`git config core.hooksPath .githooks` (done by `./setup.sh`). `pre-commit` runs the `ktlint` and `detekt-cli` CLIs on
+`pre-commit` runs the `ktlint` and `detekt-cli` CLIs on
 staged `.kt`/`.kts` files and `shellcheck` on staged shell scripts (`*.sh`, `*.command`, `.githooks/*`), and rejects on
 findings (never auto-fixes; `brew install ktlint shellcheck`). For ktlint it refuses a CLI other than ktlint 1.8.0, the
 version kotlinter 5.7.0 bundles (`gradle/libs.versions.toml`), so bump both together. detekt runs there without type
