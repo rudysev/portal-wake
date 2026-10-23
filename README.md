@@ -85,10 +85,13 @@ repo, so see `app/src/main/assets/model-en-us/README.md` for the one-time downlo
 
 (If the model is missing the app still builds and runs — it just listens for nothing, no crash.)
 
-Verify a change with `./gradlew check` (unit tests, Android Lint and ktlint; `./gradlew formatKotlin` fixes
+Verify a change with `./gradlew check` (unit tests, Android Lint, detekt and ktlint; `./gradlew formatKotlin` fixes
 style). `./setup.sh` turns on the repo's git hooks (`git config core.hooksPath .githooks`): `pre-commit` runs the
-ktlint CLI on staged Kotlin files and shellcheck on staged shell scripts (`brew install ktlint shellcheck`), and
-`pre-push` runs `./gradlew check`.
+ktlint and detekt CLIs on staged Kotlin files and shellcheck on staged shell scripts, and `pre-push` runs
+`./gradlew check`. Install the CLIs with `brew install ktlint shellcheck`, plus detekt 2.0.0-alpha.6's `detekt-cli`
+from
+[the release zip](https://github.com/detekt/detekt/releases/download/v2.0.0-alpha.6/detekt-cli-2.0.0-alpha.6.zip)
+on your `PATH` (Homebrew only has detekt 1.x).
 
 `./setup.sh` installs your local build on a connected Portal (grants the mic, frees the slot, starts the
 headless service); `./setup.sh --restore` re-enables the native "Hey Alexa" detector (com.millennium) and
