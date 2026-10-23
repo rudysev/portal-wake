@@ -2,6 +2,7 @@ package com.portal.wake.service
 
 import com.portal.commons.DebugLog
 import com.portal.wake.wake.HandoffRecovery
+import com.portal.wake.wake.HandoffRecovery.Reclaim
 import com.portal.wake.wake.MicContentionDetector
 
 /**
@@ -15,7 +16,7 @@ import com.portal.wake.wake.MicContentionDetector
  * **No Android framework types.** Everything Android (the `AudioManager` reads, the
  * `AudioRecordingConfiguration` callback, the `Handler`) lives behind [AudioGate]/[Scheduler] in
  * [WakeService]; the arbiter's only non-arbiter dependency is commons' pure-JVM `DebugLog`. So the whole
- * arbiter — including the historically churn-prone reclaim debounce and the detection-vs-handoff branch — is
+ * arbiter — including the historically churn-prone reclaim debounce — is
  * exercised in plain-JVM unit tests with fakes + an injected [now] clock (see `MicArbiterTest`).
  *
  * **Threading.** The seams are driven on one controlling thread (the service's main `Handler` in prod): the
@@ -84,18 +85,15 @@ internal class MicArbiter(
             else -> "listening"
         }
 
-    // current stand-down came from foreign-mic detection → debounce the reclaim
-    private var yieldedByDetection = false
-
     /**
      * Confirms a reclaim after [RECLAIM_DEBOUNCE_MS]: only take the mic back if no one is still recording.
      * Absorbs the transient empty-config callback emitted while our own capture stops (which would otherwise
      * reclaim instantly and re-grab the mic from a consumer that never actually released — the foreground-tap
-     * race). If a recorder is still present, re-arm recovery and keep waiting.
+     * race). If a recorder is still present, tell recovery and keep waiting.
      */
     private val reclaimConfirm = Runnable {
         if (audio.hasActiveRecording) {
-            recovery.onHandoff(consumerAlreadyRecording = true) // still here → BORROWED, await real release
+            recovery.onReleaseUnconfirmed() // still here → BORROWED, await real release
             DebugLog.log("reclaim debounced — consumer still recording")
             return@Runnable
         }
@@ -126,7 +124,7 @@ internal class MicArbiter(
 
     /**
      * Fully reset, so the arbiter is left inert and safe to reuse (e.g. in tests). Cancels its own queued
-     * posts ([callPoll]/[reclaimConfirm]) and clears both pause reasons, every coordinator + the debounce flag.
+     * posts ([callPoll]/[reclaimConfirm]) and clears both pause reasons and every coordinator.
      * The Android recording-callback is unregistered by [WakeService] (which owns it); this is the pure half of
      * teardown.
      */
@@ -137,15 +135,14 @@ internal class MicArbiter(
         pausedForCall = false
         pausedForHandoff = false
         recovery.reset()
-        yieldedByDetection = false
     }
 
     /**
      * Handle a recording-config change (the body of the old `AudioRecordingCallback`, now fed by
      * [WakeService]'s adapter with just the session ids). Two uses, never mixed:
      *  - **Contention yield** ([contention.active]): we *are* recording — a foreign session id means stand down.
-     *  - **Handoff recovery** ([recovery.active]): we aren't recording, so any config is the consumer — reclaim
-     *    when they stop.
+     *  - **Handoff recovery** ([HandoffRecovery.onForeignRecording]): we aren't recording, so any config is the
+     *    consumer — act on recovery's [Reclaim] decision when they stop.
      */
     fun onRecordingConfigs(sessionIds: List<Int>) {
         val nowMs = now()
@@ -158,20 +155,18 @@ internal class MicArbiter(
             return
         }
 
-        if (!recovery.active) return // we aren't recording while handed off, so any config = the consumer
-        val consumerRecording = sessionIds.isNotEmpty()
-        if (recovery.onForeignRecording(consumerRecording)) {
-            if (yieldedByDetection) {
-                // Detection path only: the consumer was already recording when we stood down, so pausing OUR
-                // OWN capture emits a transient empty-config callback that looks like a release and would
-                // re-grab the mic instantly. Confirm against live configs after a short debounce.
-                scheduler.removeCallbacks(reclaimConfirm)
-                scheduler.postDelayed(reclaimConfirm, RECLAIM_DEBOUNCE_MS)
-            } else {
-                // Wake handoff: the consumer started after we paused (we were BORROWED), so this can only be
-                // the real release — reclaim immediately, keeping "hey jarvis" turns snappy.
+        // We aren't recording while handed off, so any config = the consumer (recovery ignores it when idle).
+        when (recovery.onForeignRecording(recording = sessionIds.isNotEmpty())) {
+            Reclaim.NONE -> Unit
+
+            Reclaim.NOW -> { // wake handoff — reclaim immediately, keeping "hey jarvis" turns snappy
                 DebugLog.log("consumer released mic → reclaiming")
                 reclaimNow()
+            }
+
+            Reclaim.CONFIRM -> { // detection — may be our own pause's transient empty; see [reclaimConfirm]
+                scheduler.removeCallbacks(reclaimConfirm)
+                scheduler.postDelayed(reclaimConfirm, RECLAIM_DEBOUNCE_MS)
             }
         }
     }
@@ -207,18 +202,16 @@ internal class MicArbiter(
     fun standDown(reason: String, consumerAlreadyRecording: Boolean = false) {
         scheduler.removeCallbacks(reclaimConfirm) // a fresh handoff supersedes any pending reclaim
         contention.onCaptureStopped()
-        yieldedByDetection = consumerAlreadyRecording
         DebugLog.log("WAKE → handing off ($reason)")
         setPausedForHandoff(true)
         // Wake handoff (false): consumer starts AFTER we release → WAITING, and reclaim is immediate.
-        // Foreign-mic detection (true): consumer already holds the mic → BORROWED directly, reclaim debounced.
+        // Foreign-mic detection (true): consumer already holds the mic → BORROWED directly, reclaim confirmed.
         recovery.onHandoff(consumerAlreadyRecording)
         reconcile() // pauses capture, freeing the slot
     }
 
     /** Take the mic back: clear recovery + the handoff pause reason and reconcile (starts unless a call holds). */
     private fun reclaimNow() {
-        yieldedByDetection = false
         recovery.reset()
         setPausedForHandoff(false)
         reconcile()

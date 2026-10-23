@@ -1,81 +1,73 @@
 package com.portal.wake.wake
 
+import com.portal.wake.wake.HandoffRecovery.Reclaim
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The recovery rule: reclaim the mic only once the consumer that held it has stopped — never on the
- * transient "no one recording" right after our own release during a hand-off.
+ * The reclaim rule: take the mic back only once the consumer that held it has stopped — never on the
+ * transient "no one recording" right after our own release. A wake handoff reclaims [Reclaim.NOW]; a
+ * detection stand-down asks the caller to [Reclaim.CONFIRM] against live configs first.
  */
 class HandoffRecoveryTest {
 
     @Test fun idleNeverReclaims() {
         val r = HandoffRecovery()
-        assertFalse(r.onForeignRecording(false))
-        assertFalse(r.onForeignRecording(true))
+        assertEquals(Reclaim.NONE, r.onForeignRecording(false))
+        assertEquals(Reclaim.NONE, r.onForeignRecording(true))
         assertFalse(r.active)
     }
 
-    // ---- explicit hand-off (we released first; consumer grabs later) -------------------------------
-
-    @Test fun handoff_doesNotReclaimOnReleaseRaceBeforeConsumerGrabs() {
+    @Test fun resetStopsTracking_evenWithAConfirmOutstanding() {
         val r = HandoffRecovery()
-        r.onHandoff()
-        assertFalse(r.onForeignRecording(false)) // our own release — no foreigner yet; must NOT reclaim
-        assertFalse(r.onForeignRecording(false))
-        assertTrue(r.active)
-    }
-
-    @Test fun handoff_reclaimsOnceConsumerGrabsThenReleases() {
-        val r = HandoffRecovery()
-        r.onHandoff()
-        assertFalse(r.onForeignRecording(false)) // waiting
-        assertFalse(r.onForeignRecording(true)) // consumer grabbed → borrowed
-        assertFalse(r.onForeignRecording(true)) // still borrowed
-        assertTrue(r.onForeignRecording(false)) // consumer released → reclaim
+        r.onHandoff(consumerAlreadyRecording = true)
+        assertEquals(Reclaim.CONFIRM, r.onForeignRecording(false))
+        r.reset() // confirmed → reclaimed
+        assertFalse(r.active)
+        r.onReleaseUnconfirmed() // a stale confirm can't re-arm an idle recovery
+        assertEquals(Reclaim.NONE, r.onForeignRecording(true))
+        assertEquals(Reclaim.NONE, r.onForeignRecording(false))
         assertFalse(r.active)
     }
 
-    @Test fun handoff_reclaimsExactlyOnce() {
-        val r = HandoffRecovery()
-        r.onHandoff()
-        r.onForeignRecording(true)
-        assertTrue(r.onForeignRecording(false)) // reclaim
-        assertFalse(r.onForeignRecording(false)) // already idle
-    }
+    // ---- wake handoff (we released first; consumer grabs later) -------------------------------------
 
-    @Test fun resetStopsTracking() {
+    @Test fun wakeHandoff_noneUntilConsumerRecords_thenNowOnRelease() {
         val r = HandoffRecovery()
         r.onHandoff()
-        r.onForeignRecording(true)
-        r.reset()
+        assertEquals(Reclaim.NONE, r.onForeignRecording(false)) // our own release — no consumer yet
+        assertEquals(Reclaim.NONE, r.onForeignRecording(false))
+        assertEquals(Reclaim.NONE, r.onForeignRecording(true)) // consumer grabbed → borrowed
+        assertEquals(Reclaim.NONE, r.onForeignRecording(true)) // still borrowed
+        assertEquals(Reclaim.NOW, r.onForeignRecording(false)) // consumer released → reclaim now
         assertFalse(r.active)
-        assertFalse(r.onForeignRecording(false))
+        assertEquals(Reclaim.NONE, r.onForeignRecording(false)) // exactly once
     }
 
-    // ---- foreign-mic detection (consumer already recording at stand-down) ---------------------------
+    // ---- detection stand-down (consumer already recording when we stood down) -----------------------
 
-    @Test fun alreadyRecording_armsBorrowedAndReclaimsOnRelease() {
-        // No "consumer starts" edge to see — the foreign app already holds the mic, so we arm BORROWED and
-        // reclaim on the first real release.
+    @Test fun detection_confirmsOnRelease() {
+        // No "consumer starts" edge to see — the foreign app already holds the mic. A release may be the
+        // transient empty from pausing our own capture, so the caller must confirm before reclaiming.
         val r = HandoffRecovery()
         r.onHandoff(consumerAlreadyRecording = true)
         assertTrue(r.active)
-        assertFalse(r.onForeignRecording(true)) // still recording → stay borrowed
-        assertTrue(r.onForeignRecording(false)) // released → reclaim
-        assertFalse(r.active)
+        assertEquals(Reclaim.NONE, r.onForeignRecording(true)) // still recording → stay borrowed
+        assertEquals(Reclaim.CONFIRM, r.onForeignRecording(false)) // released → confirm
+        assertEquals(Reclaim.NONE, r.onForeignRecording(false)) // exactly once while the confirm is outstanding
+        assertEquals(Reclaim.NONE, r.onForeignRecording(true))
+        assertTrue(r.active)
     }
 
-    @Test fun alreadyRecording_debounceReArmSequence() {
-        // The WakeService debounce: a transient empty fires a reclaim (BORROWED→IDLE), the confirm sees the
-        // consumer still recording and re-arms BORROWED; the real release then reclaims.
+    @Test fun detection_releaseUnconfirmed_returnsToBorrowed_thenConfirmsAgain() {
         val r = HandoffRecovery()
         r.onHandoff(consumerAlreadyRecording = true)
-        assertTrue(r.onForeignRecording(false)) // transient empty → would reclaim…
-        r.onHandoff(consumerAlreadyRecording = true) // …but confirm re-arms BORROWED (consumer still there)
+        assertEquals(Reclaim.CONFIRM, r.onForeignRecording(false)) // transient empty → confirm
+        r.onReleaseUnconfirmed() // the confirm still found a recorder
         assertTrue(r.active)
-        assertTrue(r.onForeignRecording(false)) // real release → reclaim
-        assertFalse(r.active)
+        assertEquals(Reclaim.NONE, r.onForeignRecording(true)) // still borrowed
+        assertEquals(Reclaim.CONFIRM, r.onForeignRecording(false)) // real release → confirm again
     }
 }
