@@ -55,7 +55,7 @@ class MicArbiterTest {
     }
 
     private class FakeAudio : MicArbiter.AudioGate {
-        override var mode: Int = MODE_NORMAL
+        override var inCall: Boolean = false
         override var hasActiveRecording: Boolean = false
     }
 
@@ -76,7 +76,7 @@ class MicArbiterTest {
 
     @Test
     fun start_doesNotCaptureWhileInCall() {
-        audio.mode = MODE_IN_CALL
+        audio.inCall = true
 
         arbiter.start()
 
@@ -155,15 +155,50 @@ class MicArbiterTest {
     fun callMidHandoff_blocksReclaimUntilBothClear() {
         arbiter.start()
         arbiter.standDown("wake") // paused for handoff
-        audio.mode = MODE_IN_CALL
+        audio.inCall = true
         sch.fire(MicArbiter.STANDDOWN_POLL_MS) // poll sees the call → also paused for call
 
         arbiter.onRecordingConfigs(listOf(7)) // consumer records
         arbiter.onRecordingConfigs(emptyList()) // consumer releases → handoff reason cleared...
         assertFalse(ctl.isCapturing) // ...but the call still holds, so no capture
 
-        audio.mode = MODE_NORMAL
+        audio.inCall = false
         sch.fire(MicArbiter.STANDDOWN_POLL_MS) // call clears → reclaim
+        assertTrue(ctl.isCapturing)
+    }
+
+    @Test
+    fun reclaim_staysPausedWhenACallBeganSinceTheLastPoll() {
+        arbiter.start()
+        arbiter.standDown("wake")
+        arbiter.onRecordingConfigs(listOf(7)) // consumer records
+
+        audio.inCall = true // call begins between poll ticks — the poll hasn't seen it yet
+        arbiter.onRecordingConfigs(emptyList()) // consumer releases → reclaim would start capture
+        assertFalse(ctl.isCapturing)
+        assertEquals(1, ctl.startCount) // only the initial start; the reclaim never reached the controller
+
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // call still on → still paused
+        assertFalse(ctl.isCapturing)
+
+        audio.inCall = false
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // call over → capture resumes
+        assertTrue(ctl.isCapturing)
+    }
+
+    @Test
+    fun retry_staysPausedWhenACallBeganSinceTheLastPoll() {
+        ctl.startResult = false
+        arbiter.start() // refused → not capturing, retry pending
+        ctl.startResult = true
+
+        audio.inCall = true // call begins between poll ticks
+        arbiter.reconcile() // a retry (e.g. after a wake-set refresh) would now succeed
+        assertFalse(ctl.isCapturing)
+        assertEquals(1, ctl.startCount)
+
+        audio.inCall = false
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // call over → retry takes
         assertTrue(ctl.isCapturing)
     }
 
@@ -211,10 +246,5 @@ class MicArbiterTest {
         // A fresh stand-down must cancel the still-pending reclaim so it can't fire after a new handoff.
         arbiter.standDown("new handoff")
         assertEquals(0, sch.countWithDelay(MicArbiter.RECLAIM_DEBOUNCE_MS))
-    }
-
-    private companion object {
-        const val MODE_NORMAL = 0
-        const val MODE_IN_CALL = 2 // AudioManager.MODE_IN_CALL — any non-normal mode reads as in-call
     }
 }

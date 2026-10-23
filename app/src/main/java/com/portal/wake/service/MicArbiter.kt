@@ -1,16 +1,14 @@
 package com.portal.wake.service
 
 import com.portal.commons.DebugLog
-import com.portal.wake.audio.CallGate
 import com.portal.wake.wake.CaptureGate
 import com.portal.wake.wake.HandoffRecovery
 import com.portal.wake.wake.MicContentionDetector
 
 /**
  * Owns the **mic-arbitration decision flow** that used to live inline in [WakeService]: it wires the three
- * pure coordinators ([CaptureGate], [HandoffRecovery], [MicContentionDetector]) plus [CallGate] to two
- * injected seams — a [Scheduler] (the controlling thread's delayed posts) and an [AudioGate] (the audio
- * signals it reads) — and drives capture start/pause through the [CaptureController] seam. [WakeService]
+ * pure coordinators ([CaptureGate], [HandoffRecovery], [MicContentionDetector]) to two injected seams — a
+ * [Scheduler] (the controlling thread's delayed posts) and an [AudioGate] (the audio signals it reads) — and drives capture start/pause through the [CaptureController] seam. [WakeService]
  * keeps the engine lifecycle, the match→consumer routing, and the thin Android adapters; this class is the
  * "should we be holding the mic right now" state machine.
  *
@@ -60,8 +58,9 @@ internal class MicArbiter(
 
     /** The Android audio signals the arbiter reads, behind a seam so the arbiter stays pure-JVM testable. */
     interface AudioGate {
-        /** `AudioManager.getMode()`. */
-        val mode: Int
+        /** Whether a phone/VoIP call is ringing or active, read live. The "not `MODE_NORMAL`" rule lives in the
+         *  production adapter, so no raw audio-mode int crosses this seam. */
+        val inCall: Boolean
 
         /** Whether any recording is currently active. A presence check — the reclaim confirm needs "is anyone
          *  recording?", not the ids (those arrive pushed via [onRecordingConfigs]) — so no list is allocated. */
@@ -92,14 +91,14 @@ internal class MicArbiter(
     }
 
     /**
-     * The call stand-down poll. API 28 has no audio-mode-change broadcast, so we re-read [AudioGate.mode] on
+     * The call stand-down poll. API 28 has no audio-mode-change broadcast, so we re-read [AudioGate.inCall] on
      * the controlling thread for the service's life. It re-posts itself; [detach] (and the service's blanket
      * queue clear) cancels it. Runs during handoff too, so a call starting mid-handoff is seen and blocks
      * reclaim.
      */
     private val callPoll = object : Runnable {
         override fun run() {
-            val inCall = CallGate.inCall(audio.mode)
+            val inCall = audio.inCall
             if (gate.onCall(inCall)) DebugLog.log("gate: call=$inCall → ${gate.status}")
             reconcile() // also retries a refused/zombie start on the next tick
             scheduler.postDelayed(this, STANDDOWN_POLL_MS)
@@ -108,7 +107,7 @@ internal class MicArbiter(
 
     /** Seed call state, start the poll, and do the first reconcile. Call once the engine is built. */
     fun start() {
-        gate.onCall(CallGate.inCall(audio.mode)) // seed call state before the first reconcile
+        gate.onCall(audio.inCall) // seed call state before the first reconcile
         scheduler.postDelayed(callPoll, STANDDOWN_POLL_MS)
         reconcile()
     }
@@ -167,10 +166,19 @@ internal class MicArbiter(
      * The single place capture is started or paused. Brings capture in line with [CaptureGate] via the
      * [CaptureController]: start it when nothing should pause us (only marking capture started on the actual
      * start result, so a refused/zombie start is retried rather than assumed), pause it otherwise.
+     *
+     * **A voice call always wins.** Immediately before any start (poll, reclaim, retry) the live call state
+     * is re-read, closing the up-to-[STANDDOWN_POLL_MS] window between a call starting and the poll seeing
+     * it; if a call has begun, the call reason is set and capture stays paused.
      */
     fun reconcile() {
         val want = gate.shouldCapture
         if (want && !controller.isCapturing) {
+            if (audio.inCall) {
+                gate.onCall(true)
+                DebugLog.log("gate: call=true (live check before start) → ${gate.status}")
+                return
+            }
             if (controller.startCapture()) contention.onCaptureStarted(now())
         } else if (!want && controller.isCapturing) {
             controller.pauseCapture()
@@ -204,7 +212,7 @@ internal class MicArbiter(
     }
 
     companion object {
-        // While a call holds the mic, re-check the audio mode this often (no mode-change event on API 28).
+        // Re-check the in-call state (audio mode) this often (no mode-change event on API 28).
         internal const val STANDDOWN_POLL_MS = 250L
 
         // After a consumer "release" is seen on the DETECTION path only, confirm against live configs this much
