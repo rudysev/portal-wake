@@ -56,7 +56,7 @@ class WakeService :
     }
 
     // Hands a fired wake to its consumer (on main), releasing the mic through the arbiter first.
-    private val dispatcher by lazy { WakeDispatcher(this, arbiter) }
+    private val handoff by lazy { WakeHandoff(this, arbiter) }
 
     /**
      * The Android recording-config callback: registered on [main] in [onCreate], it forwards the session ids
@@ -194,7 +194,7 @@ class WakeService :
                 onDetectorUnavailable = { DebugLog.log("wake unavailable (model missing) — service idle") },
                 // Runs on the engine's capture thread: only hop to main, where all orchestration runs
                 // single-threaded, so the capture thread only captures.
-                onWake = { event -> main.post { dispatcher.dispatch(targets, event.wakeId) } },
+                onWake = { event -> main.post { handoff.handOff(targets, event.wakeId) } },
                 onError = { message ->
                     DebugLog.log("engine error: $message")
                     captureLost()

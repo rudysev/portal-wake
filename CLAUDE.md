@@ -42,8 +42,8 @@ Routes: **jarvis** → plugin `portal-assistant` (`WakeContract`); **alexa** →
   `docs/agents/android-10.md`.
 
 ## Layout
-- `service/` — Android lifecycle + adapters: `WakeService` (engine lifecycle, match→consumer routing,
-  `AudioManagerGate`, `HandlerScheduler`, recording callback, `logSilencing`), `WakeNotification`, `BootReceiver`.
+- `service/` — Android lifecycle + adapters: `WakeService` (engine lifecycle, `AudioManagerGate`, `HandlerScheduler`,
+  recording callback, `logSilencing`), `WakeHandoff` (match→consumer routing), `WakeNotification`, `BootReceiver`.
 - `mic/` — Android-free, unit-tested. `MicArbiter` = state machine: two pause reasons (call, handoff), single
   `reconcile()`, drives engine via `CaptureController`, reads Android via `Scheduler`/`AudioGate`. Internal:
   `HandoffRecovery` (reclaim rule), `MicContentionDetector`.
