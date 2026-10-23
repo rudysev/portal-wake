@@ -12,8 +12,8 @@ the mic, runs an on-device **Vosk** recognizer, and on a wake match hands the mi
 Wake detection is small and standalone, and wake words are **discovered at runtime** instead of
 hard-coded.
 
-minSdk 28 / targetSdk 29 / compileSdk 36. **No Google Mobile Services.** Deps: `androidx.core`,
-`com.alphacephei:vosk-android`, and `com.portal:commons` — wired in via a Gradle composite build from the
+minSdk 28 / targetSdk 29 / compileSdk 36. **No Google Mobile Services.** Deps: `androidx.core` and
+`com.portal:commons` — wired in via a Gradle composite build from the
 sibling `../portal-commons`. This repo lives in the **portal-apps** workspace (the superproject that holds
 `portal-wake`, `portal-commons`, and `portal-assistant` side by side as submodules).
 
