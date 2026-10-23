@@ -40,7 +40,7 @@ by reclaim, or when the call ends.
 _Avoid_: back off, release, yield
 
 **Detection stand-down**:
-A stand-down caused by seeing a consumer already recording (mic contention, or a lost capture to another
+A stand-down caused by seeing a consumer already recording (mic contention, or a capture loss to another
 recorder) rather than by a wake word. It goes straight to BORROWED.
 _Avoid_: forced handoff, auto-yield
 
@@ -61,7 +61,8 @@ holds the mic, with no done signal and no timeout. After a detection stand-down 
 before reclaiming.
 _Avoid_: resume, timeout
 
-**Lost capture**:
-Portal-Wake's capture ending without Portal-Wake having paused it. If another app is recording, it is a
-detection stand-down; otherwise it is a device fault and capture is retried.
-_Avoid_: capture error, engine stopped, mic failure
+**Capture loss**:
+The wake mic engine reporting that capture is not running while Portal-Wake wants it running (defined in
+portal-commons' `GLOSSARY.md`), including a refused start. If another app is recording, it is a detection
+stand-down; otherwise it is a device fault and capture is retried on the next poll.
+_Avoid_: lost capture, capture error, engine stopped, mic failure
