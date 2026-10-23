@@ -129,6 +129,12 @@ git submodule update --init --recursive   # from the portal-apps workspace: pull
 npx -y @meta-quest/hzdb adb shell "cat /sdcard/Android/data/com.portal.wake/files/debug.txt"
 ```
 
+## CI
+
+`.github/workflows/ci.yml` runs `./gradlew test assembleDebug` on every push to `main`, on `workflow_dispatch`, and
+when a green `portal-commons` run dispatches `portal-commons-green`. It checks out `portal-wake` and
+`portal-commons@main` side by side so that `includeBuild("../portal-commons")` resolves.
+
 ## Agent skills
 
 ### Issue tracker
