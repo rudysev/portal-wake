@@ -47,9 +47,9 @@ dependencies {
   implementation(libs.androidx.core)
   implementation(libs.androidx.annotation)
   // Shared utilities (DebugLog/PcmCaptureSession/PcmCaptureFormat); composite-build substituted from ./commons.
-  implementation("com.portal:commons")
+  implementation(libs.portal.commons)
   // Shared Android shells (AudioRecordPcmDevice); composite-build substituted from ./commons-android.
-  implementation("com.portal:commons-android")
+  implementation(libs.portal.commons.android)
   // On-device wake-word recognition — free, keyless, offline, no Google Mobile Services. Runtime-only: the app
   // never calls Vosk itself (commons-android does), it only ships the native library.
   runtimeOnly(libs.vosk.android)
