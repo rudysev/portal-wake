@@ -39,8 +39,11 @@ apk_work/
 system_services.apk
 *.apk
 docs/*
-# …except published README assets.
+# …except published README assets and agent-skill config.
 !docs/img/
+!docs/agents/
+# Local-markdown issue tracker (see docs/agents/issue-tracker.md) — kept private.
+.scratch/
 
 build/
 # Downloaded speech model (not committed); keep the folder's README.
