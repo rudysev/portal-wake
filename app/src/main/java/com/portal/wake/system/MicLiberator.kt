@@ -69,6 +69,8 @@ object MicLiberator {
         cachedTargets?.let { return it }
         val scanned = runCatching {
             val pm = context.packageManager
+            // DEPRECATION: the PackageInfoFlags overload is API 33+ and minSdk is 28. QueryPermissionsNeeded:
+            // targetSdk 29 predates package-visibility filtering (targets 30+), so the full list is visible.
             @Suppress("DEPRECATION", "QueryPermissionsNeeded")
             pm.getInstalledPackages(0)
                 .map { it.packageName }
