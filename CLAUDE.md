@@ -1,7 +1,8 @@
 # CLAUDE.md — Portal-Wake
 
 Onboarding for an agent picking up this project. Read `README.md` for the full picture; this is the
-fast version.
+fast version. Domain vocabulary (handoff, stand down, reclaim, consumer, BORROWED, …) is defined in
+`GLOSSARY.md`; use those terms.
 
 ## What this is
 
@@ -28,7 +29,7 @@ API); **alexa** → the native Alexa client `falcon` (via its `LISTEN` intent). 
 - **Recover by detection, never by a signal or timer.** After a hand-off Portal-Wake reclaims the mic
   only once the consumer stops recording (`HandoffRecovery` fed by an `AudioRecordingCallback`), and only
   while it is itself paused. There is no `WAKE_DONE` and no reclaim timer (a turn may be minutes long).
-  Do NOT identify a foreigner by comparing recording-config session ids against our own `AudioRecord` —
+  Do NOT identify a foreign recorder by comparing recording-config session ids against our own `AudioRecord` —
   on this Portal those ids don't match, so that approach self-detects and loops. The callback acts only
   while paused.
 - **Three stand-down triggers, one reclaim rule.** Capture pauses for (1) a wake match, (2) a phone/VoIP
