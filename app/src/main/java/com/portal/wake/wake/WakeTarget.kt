@@ -12,8 +12,4 @@ import com.portal.commons.audio.WakeWord
  *   "launch": the recognizer never sees the component; the dispatcher routes by [WakeWord.id].
  * @param source    the handler's package id (for logs), or null for a built-in default.
  */
-data class WakeTarget(
-    val word: WakeWord,
-    val component: ComponentName?,
-    val source: String?,
-)
+data class WakeTarget(val word: WakeWord, val component: ComponentName?, val source: String?)

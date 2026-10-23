@@ -50,8 +50,14 @@ object WakeSpec {
         return word
     }
 
-    /** The declared [minConfidence], or [defaultMinConf] when it is absent, or reported via [onProblem] when invalid. */
-    private fun minConfOrDefault(minConfidence: String?, defaultMinConf: Double, onProblem: (reason: String) -> Unit): Double {
+    /**
+     * The declared [minConfidence], or [defaultMinConf] when it is absent, or reported via [onProblem] when invalid.
+     */
+    private fun minConfOrDefault(
+        minConfidence: String?,
+        defaultMinConf: Double,
+        onProblem: (reason: String) -> Unit,
+    ): Double {
         val n = minConfidence?.trim()?.toDoubleOrNull()
         return when {
             minConfidence.isNullOrBlank() -> defaultMinConf

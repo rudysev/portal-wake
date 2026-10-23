@@ -41,7 +41,11 @@ object WakeRegistry {
         val coveredIds = discovered.map { it.word.id }.toSet()
         val fallback = defaults(pm).filter { it.word.id !in coveredIds }
         val all = discovered + fallback
-        DebugLog.log("registry: ${all.map { "${it.word.id}${if (it.component != null) "→${it.source}" else "(log)"}" }}")
+        DebugLog.log(
+            "registry: ${all.map {
+                "${it.word.id}${if (it.component != null) "→${it.source}" else "(log)"}"
+            }}",
+        )
         return all
     }
 
@@ -83,7 +87,9 @@ object WakeRegistry {
             id = meta.text(WakeContract.META_ID),
             minConfidence = meta.text(WakeContract.META_MIN_CONFIDENCE),
             defaultMinConf = WakeMatcher.BASELINE_CONF,
-            onProblem = { reason -> DebugLog.log("registry: wake plugin ${component.flattenToShortString()}: $reason") },
+            onProblem = { reason ->
+                DebugLog.log("registry: wake plugin ${component.flattenToShortString()}: $reason")
+            },
         )
         return word?.let {
             warnIfMisdeclared(component, phrase, it)
@@ -109,7 +115,8 @@ object WakeRegistry {
         if (wordCount > 2) {
             DebugLog.log(
                 "registry: ${component.flattenToShortString()} phrase \"$declaredPhrase\" has $wordCount words — " +
-                    "only the last two are used (lead \"${w.lead}\" + keyword \"${w.keyword}\"); declare a two-word phrase",
+                    "only the last two are used (lead \"${w.lead}\" + keyword \"${w.keyword}\"); " +
+                    "declare a two-word phrase",
             )
         }
         if (w.lead == null && w.minConf > WakeMatcher.BASELINE_CONF) {
@@ -151,7 +158,10 @@ object WakeRegistry {
     }
 
     /** A built-in strict wake word. Its phrase is a non-blank literal, so [WakeWord.fromPhrase] always builds it. */
-    private fun builtin(phrase: String, id: String): WakeWord = checkNotNull(WakeWord.fromPhrase(phrase, id = id, minConf = WakeMatcher.STRICT_MIN_CONF)) { "built-in phrase \"$phrase\"" }
+    private fun builtin(phrase: String, id: String): WakeWord =
+        checkNotNull(WakeWord.fromPhrase(phrase, id = id, minConf = WakeMatcher.STRICT_MIN_CONF)) {
+            "built-in phrase \"$phrase\""
+        }
 
     private fun isInstalled(pm: PackageManager, pkg: String): Boolean = runCatching {
         @Suppress("DEPRECATION")

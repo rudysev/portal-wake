@@ -60,13 +60,18 @@ object WakeContract {
     /** Action both *discovered* (intent-filter) and *delivered* (explicit broadcast) on a match. */
     const val ACTION_WAKE = "com.portal.wake.action.WAKE"
 
-    /** Required meta-data key: the full spoken phrase, e.g. "hey jarvis" (keyword = last word, lead = the word before). */
+    /**
+     * Required meta-data key: the full spoken phrase, e.g. "hey jarvis" (keyword = last word, lead = the word before).
+     */
     const val META_PHRASE = "com.portal.wake.phrase"
 
     /** Optional meta-data key: the wake id reported on a match; defaults to the keyword when absent. */
     const val META_ID = "com.portal.wake.id"
 
-    /** Optional meta-data key: the keyword-confidence floor in [[MIN_CONFIDENCE], [MAX_CONFIDENCE]]; defaults to the matcher baseline. */
+    /**
+     * Optional meta-data key: the keyword-confidence floor in [[MIN_CONFIDENCE], [MAX_CONFIDENCE]]; defaults to the
+     * matcher baseline.
+     */
     const val META_MIN_CONFIDENCE = "com.portal.wake.min_confidence"
 
     /** Inclusive bounds a declared [META_MIN_CONFIDENCE] must fall within. */
