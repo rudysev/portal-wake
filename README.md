@@ -60,6 +60,10 @@ as **named meta-data** — one field per setting. Example — an app that adds "
 - **`id`** (optional) — the value reported back on a match; defaults to the keyword.
 - **One receiver = one wake word.** To register several, declare several receivers — each is discovered
   independently.
+- **Your app must record after a wake.** Portal-Wake hands you the mic and takes it back only once it has
+  seen you record and then stop — there is no "done" signal and no timeout. So the plugin needs
+  `RECORD_AUDIO` and must open the mic on every wake, even briefly. A plugin that never records leaves
+  Portal-Wake deaf until the service is restarted.
 
 ## For developers — build from source
 

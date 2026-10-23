@@ -45,6 +45,11 @@ package com.portal.wake.wake
  * uncooperative ones (the native Alexa app, a phone/VoIP call) that could never send a signal.
  * Portal-wake never yanks the mic mid-interaction; it returns only once you release it.
  *
+ * **The handler MUST record.** Reclaim waits to *see* the consumer record before it watches for the
+ * release, so a handler that never opens the mic leaves portal-wake paused (deaf) until it is restarted.
+ * A plugin needs `RECORD_AUDIO` and must open the mic on every [ACTION_WAKE], even for a turn it abandons
+ * at once; a plugin that only reacts to the wake (no audio) is unsupported.
+ *
  * **The handler also does NOT signal when it starts on its own** (e.g. a foreground tap). Portal-wake
  * *yields by detection* — the same callback spots a foreign recording session while wake is capturing
  * and stands down automatically. Plugin apps only need to open the mic; no extra broadcast.
