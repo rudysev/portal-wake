@@ -75,7 +75,6 @@ class WakeService :
     private var engine: WakeMicEngine? = null
     private var targets: List<WakeTarget> = emptyList()
     private var started = false
-    private var engineGeneration = 0 // main-only; bumped per built engine to ignore a replaced engine's onStopped
 
     /**
      * Re-discover when wake plugins are installed/removed. A single reinstall delivers 2–3 broadcasts
@@ -144,8 +143,10 @@ class WakeService :
 
     // ---- MicArbiter.CaptureController (engine-side seam) --------------------------------------------
 
-    // "Start requested" (see the CaptureController contract); a busy mic comes back via onError → onCaptureLost.
-    override fun startCapture(): Boolean = engine?.start() ?: false
+    // "Start requested" (see the CaptureController contract); a busy mic comes back as a capture loss.
+    override fun startCapture() {
+        engine?.start()
+    }
 
     override fun pauseCapture() {
         engine?.pause()
@@ -165,7 +166,7 @@ class WakeService :
 
     /**
      * The wake set became empty: detach the arbiter, then close the engine — so nothing stops capture behind
-     * the arbiter's back, and the closed engine's late stopped callback reaches a detached arbiter (a no-op).
+     * the arbiter's back. A closed engine delivers no further capture loss.
      */
     private fun stopListening() {
         arbiter.detach()
@@ -182,10 +183,6 @@ class WakeService :
             engine = null
             return
         }
-        val generation = ++engineGeneration
-        // Both engine callbacks report a lost capture (the arbiter ignores the 2nd of an error-then-stopped
-        // pair); a replaced engine's late callbacks are dropped by the generation check.
-        val captureLost = { if (engineGeneration == generation) arbiter.onCaptureLost() }
         engine = WakeMicEngine(
             context = applicationContext,
             config = WakeMicConfig(
@@ -195,11 +192,8 @@ class WakeService :
                 // Runs on the engine's capture thread: only hop to main, where all orchestration runs
                 // single-threaded, so the capture thread only captures.
                 onWake = { event -> main.post { handoff.handOff(targets, event.wakeId) } },
-                onError = { message ->
-                    DebugLog.log("engine error: $message")
-                    captureLost()
-                },
-                onStopped = { captureLost() },
+                // On main; the engine logs the cause and never delivers one after close().
+                onCaptureLost = { arbiter.onCaptureLost() },
                 beforeMicAcquire = { MicLiberator.freeMic(applicationContext) },
             ),
         )

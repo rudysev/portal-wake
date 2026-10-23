@@ -9,19 +9,17 @@ import org.junit.Test
  * Pure-JVM unit tests for [MicArbiter] — the mic-arbitration wiring that used to be untestable inside
  * `WakeService`. Drives the arbiter through fake [MicArbiter.CaptureController]/[MicArbiter.Scheduler]/
  * [MicArbiter.AudioGate] seams plus a controllable clock, so the historically churn-prone branches
- * (call stand-down, wake-handoff immediate reclaim, detection debounce, refused-start retry, lost capture)
+ * (call stand-down, wake-handoff immediate reclaim, detection debounce, capture loss)
  * are locked in.
  */
 class MicArbiterTest {
 
     private class FakeController : MicArbiter.CaptureController {
-        var startResult = true
         var startCount = 0
         var pauseCount = 0
 
-        override fun startCapture(): Boolean {
+        override fun startCapture() {
             startCount++
-            return startResult
         }
 
         override fun pauseCapture() {
@@ -243,9 +241,8 @@ class MicArbiterTest {
 
     @Test
     fun retry_staysPausedWhenACallBeganSinceTheLastPoll() {
-        ctl.startResult = false
-        arbiter.start() // refused → not capturing, retry pending
-        ctl.startResult = true
+        arbiter.start()
+        arbiter.onCaptureLost() // the start was refused → reported as a loss, retry pending
 
         audio.inCall = true // call begins between poll ticks
         arbiter.reconcile() // a retry (e.g. after a wake-set refresh) would now succeed
@@ -258,19 +255,16 @@ class MicArbiterTest {
     }
 
     @Test
-    fun reconcile_retriesWhenStartCaptureRefused() {
-        ctl.startResult = false
-        arbiter.start() // refused
-        assertFalse(arbiter.isCapturing)
+    fun refusedStart_isMarkedRunning_thenRetriedThroughTheLossPath() {
+        arbiter.start()
+        assertTrue(arbiter.isCapturing) // marked running as soon as the start is requested
         assertEquals(1, ctl.startCount)
+
+        arbiter.onCaptureLost() // the engine refuses (wedged session): a loss, nobody else recording
+        assertFalse(arbiter.isCapturing)
 
         sch.fire(MicArbiter.STANDDOWN_POLL_MS) // poll retries
         assertEquals(2, ctl.startCount)
-        assertFalse(arbiter.isCapturing)
-
-        ctl.startResult = true
-        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // now it takes
-        assertEquals(3, ctl.startCount)
         assertTrue(arbiter.isCapturing)
     }
 
@@ -289,18 +283,11 @@ class MicArbiterTest {
     }
 
     @Test
-    fun detachThenStart_ignoresALateLostCapture_andReSeedsCallState() {
+    fun detachThenStart_reSeedsCallState() {
         arbiter.start()
         arbiter.standDown("wake") // mid-handoff when the wake set empties
         arbiter.detach() // the service then closes the engine
-        val pausesAtDetach = ctl.pauseCount
 
-        audio.hasActiveRecording = true // the consumer still holds the mic
-        arbiter.onCaptureLost() // the closed engine's late stopped callback reaches a detached arbiter
-        assertEquals(pausesAtDetach, ctl.pauseCount) // no-op: no pause, no stand-down armed
-        assertEquals(0, sch.countWithDelay(MicArbiter.STANDDOWN_POLL_MS))
-
-        audio.hasActiveRecording = false
         audio.inCall = true // a call began while detached
         arbiter.start() // the wake set is non-empty again: engine rebuilt, arbiter started
         assertFalse(arbiter.isCapturing) // call state re-seeded, not stale
@@ -365,32 +352,6 @@ class MicArbiterTest {
     }
 
     @Test
-    fun lostCaptureWhilePaused_isANoOp() {
-        arbiter.start()
-        arbiter.standDown("wake") // our own pause: a wake handoff, consumer not yet recording
-        audio.hasActiveRecording = true
-        arbiter.onCaptureLost() // the paused engine's stop callback — must not re-arm as a detection stand-down
-
-        arbiter.onRecordingConfigs(listOf(7)) // consumer records
-        audio.hasActiveRecording = false
-        arbiter.onRecordingConfigs(emptyList()) // releases → still the wake-handoff path: immediate reclaim
-        assertTrue(arbiter.isCapturing)
-        assertEquals(0, sch.countWithDelay(MicArbiter.RECLAIM_DEBOUNCE_MS))
-    }
-
-    @Test
-    fun duplicateLoss_errorThenStopped_isHandledOnce() {
-        arbiter.start()
-        arbiter.onCaptureLost() // error: a device fault (nobody else recording)
-        audio.hasActiveRecording = true // e.g. our just-closed session still listed when stopped arrives
-        arbiter.onCaptureLost() // stopped: the same loss — must not turn it into a stand-down
-
-        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // the device-fault retry still runs
-        assertTrue(arbiter.isCapturing)
-        assertEquals(2, ctl.startCount)
-    }
-
-    @Test
     fun lostCapture_resetsContentionTracking_andTheNextStartReSeeds() {
         arbiter.start()
         arbiter.onRecordingConfigs(listOf(1)) // seed our own session id
@@ -428,12 +389,12 @@ class MicArbiterTest {
     }
 
     @Test
-    fun lostCapture_pausesTheEngine_soAStaleStopCanNotLeaveItRunning() {
+    fun lostCapture_isAuthoritative_soTheEngineIsNotPausedAgain() {
         arbiter.start()
-        audio.hasActiveRecording = true // e.g. a late stop from an earlier pause while our restarted session runs
-        arbiter.onCaptureLost()
+        audio.hasActiveRecording = true
+        arbiter.onCaptureLost() // the engine is already idle after a loss
 
         assertFalse(arbiter.isCapturing)
-        assertEquals(1, ctl.pauseCount) // the engine is told to stop too, so the arbiter's view stays true
+        assertEquals(0, ctl.pauseCount)
     }
 }

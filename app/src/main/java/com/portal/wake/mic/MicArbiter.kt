@@ -26,8 +26,8 @@ import com.portal.wake.mic.HandoffRecovery.Reclaim
  * reasons (call + handoff) can't fight: they are tracked independently, so a call arriving mid-handoff just
  * keeps capture paused until both clear.
  *
- * **The arbiter owns the capture truth** ([isCapturing]). The engine reports a lost capture (error or stop)
- * via [onCaptureLost] rather than flipping a flag behind the arbiter's back, and every capture-state change
+ * **The arbiter owns the capture truth** ([isCapturing]). The engine reports a capture loss via [onCaptureLost]
+ * rather than flipping a flag behind the arbiter's back, and every capture-state change
  * goes through [setCapturing] — the only place the contention detector hears capture started/stopped — so
  * the two can never drift.
  */
@@ -46,11 +46,10 @@ internal class MicArbiter(
      */
     interface CaptureController {
         /**
-         * Request a capture start. True means **start requested**, not "capture is running": the mic is
-         * acquired asynchronously, and a busy mic or device fault surfaces later via [onCaptureLost]. False only
-         * when the start is refused outright (a wedged/zombie session, or no engine) — retried on the next poll.
+         * Request a capture start. The mic is acquired asynchronously; a busy mic, a device fault or a refused
+         * start (a wedged session) surfaces later as a capture loss via [onCaptureLost].
          */
-        fun startCapture(): Boolean
+        fun startCapture()
 
         /** Pause capture (no-op if already paused). */
         fun pauseCapture()
@@ -120,7 +119,7 @@ internal class MicArbiter(
     private val callPoll = object : Runnable {
         override fun run() {
             setPausedForCall(audio.inCall)
-            reconcile() // also retries a refused/zombie start on the next tick
+            reconcile() // also retries after a capture loss on the next tick
             scheduler.postDelayed(this, STANDDOWN_POLL_MS)
         }
     }
@@ -184,8 +183,8 @@ internal class MicArbiter(
 
     /**
      * The single place capture is started or paused. Brings capture in line with the pause reasons via the
-     * [CaptureController]: start it when nothing should pause us (marking capture started once the start is
-     * requested; a refused/zombie start stays not-capturing and is retried on the next poll), pause it otherwise.
+     * [CaptureController]: start it when nothing should pause us (marking capture running as soon as the start is
+     * requested; a start that fails comes back via [onCaptureLost]), pause it otherwise.
      *
      * **A voice call always wins.** Immediately before any start (poll, reclaim, retry) the live call state
      * is re-read, closing the up-to-[STANDDOWN_POLL_MS] window between a call starting and the poll seeing
@@ -198,7 +197,8 @@ internal class MicArbiter(
                 setPausedForCall(true, "live check before start")
                 return
             }
-            if (controller.startCapture()) setCapturing(true)
+            controller.startCapture()
+            setCapturing(true)
         } else if (!want && isCapturing) {
             controller.pauseCapture()
             setCapturing(false)
@@ -206,31 +206,27 @@ internal class MicArbiter(
     }
 
     /**
-     * The engine lost capture (its error or stopped callback; the service forwards both). A no-op unless we
-     * were capturing — so our own pause, or the second of an error-then-stopped pair, is ignored. Otherwise the
-     * engine is paused too (a no-op after a real loss; after a late stop from an earlier pause that landed past
-     * a restart, it stops the still-running capture so it can't outlive our not-capturing view), and:
+     * A capture loss from the engine. Authoritative: the engine reports one only while capture is wanted, at most
+     * once per start, and is idle afterwards, so there is nothing to pause. Capture is marked not running, and:
      *  - **another app is recording** → it holds the mic (e.g. busy at start-up): stand down by detection
      *    (BORROWED directly, debounced confirmed reclaim) and wait for it to release, rather than polling
      *    against it (which would run the mic liberator every tick);
      *  - **nobody is recording** → a device fault: mark not capturing and let the poll's reconcile retry.
      */
     fun onCaptureLost() {
-        if (!isCapturing) return
-        controller.pauseCapture()
         setCapturing(false)
         if (audio.hasActiveRecording) {
             DebugLog.log("capture lost — another app is recording → waiting for it to release")
             standDown("capture lost to another recorder", consumerAlreadyRecording = true)
         } else {
-            DebugLog.log("capture lost (device fault) → retrying on the next poll")
+            DebugLog.log("capture lost (device fault or refused start) → retrying on the next poll")
         }
     }
 
     /**
      * Pause capture and arm detection-based recovery so a consumer can take the mic. Used for a wake handoff
      * (the consumer is triggered right after, by the service), for foreign-mic detection (the consumer grabbed
-     * it itself), and for a capture lost while another app records ([onCaptureLost]). Reclaim is by detection
+     * it itself), and for a capture loss while another app records ([onCaptureLost]). Reclaim is by detection
      * in every case — no release signal.
      */
     fun standDown(reason: String, consumerAlreadyRecording: Boolean = false) {
@@ -251,7 +247,7 @@ internal class MicArbiter(
     }
 
     /**
-     * The single capture-state transition: every start, pause, stand-down, lost capture and detach lands here,
+     * The single capture-state transition: every start, pause, stand-down, capture loss and detach lands here,
      * and it is the only place the contention detector is told capture started (re-seed) or stopped (reset).
      */
     private fun setCapturing(on: Boolean) {
