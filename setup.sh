@@ -26,13 +26,6 @@ if [[ "${1:-}" == "--restore" ]]; then
   exit 0
 fi
 
-# Developer convenience: when run from a git clone of this repo, enable its committed hooks (.githooks/).
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if command -v git >/dev/null 2>&1 \
-  && [[ "$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)" == "$SCRIPT_DIR" ]]; then
-  git -C "$SCRIPT_DIR" config core.hooksPath .githooks
-fi
-
 if [[ ! -f "$APK" ]]; then
   echo "APK not found at $APK — build it first with: ./gradlew assembleDebug (JDK 17/21 toolchain)" >&2
   exit 1
