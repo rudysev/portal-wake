@@ -3,8 +3,8 @@ package com.portal.wake.mic
 /**
  * Detects when **another app** grabs the mic while portal-wake is actively capturing — without comparing
  * against our own `AudioRecord.getAudioSessionId()` (on this Portal that id does not reliably match the
- * session id reported in `AudioRecordingConfiguration`, which caused a yield-to-self loop when we tried
- * that approach).
+ * session id reported in `AudioRecordingConfiguration`, which made us stand down for our own recording in a
+ * loop when we tried that approach).
  *
  * Instead: we seed the **first** recording config we see after capture starts as ours; after that, any
  * session id we haven't seen — whether it joins as a 2nd config OR **replaces** ours (this is a single-mic
@@ -48,9 +48,8 @@ internal class MicContentionDetector(private val seedMs: Long = DEFAULT_SEED_MS)
         return when {
             phase == Phase.IDLE -> false
 
+            // Two recorders at once = contention (either phase).
             sessionIds.size >= 2 -> true
-
-            // two recorders at once = contention (either phase)
 
             // Seed our own from the FIRST non-empty config; until we have, there's nothing to compare against.
             phase == Phase.SEEDING && knownSessionIds.isEmpty() -> {
