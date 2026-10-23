@@ -143,8 +143,7 @@ class WakeService :
         }
         if (!started) {
             started = true
-            buildEngine()
-            arbiter.start() // seeds call state, starts the poll, and does the first reconcile
+            startListening()
         }
         return START_STICKY
     }
@@ -175,6 +174,26 @@ class WakeService :
     }
 
     // ---- engine lifecycle --------------------------------------------------------------------------
+
+    /**
+     * Build the engine and, if one was built (the wake set is non-empty), start the arbiter (seeds call state,
+     * starts the poll, and does the first reconcile). Service start-up and the wake set becoming non-empty both
+     * come here. With no engine the arbiter is left unstarted, so a later non-empty set starts it exactly once.
+     */
+    private fun startListening() {
+        buildEngine()
+        if (engine != null) arbiter.start()
+    }
+
+    /**
+     * The wake set became empty: detach the arbiter, then close the engine — so nothing stops capture behind
+     * the arbiter's back, and the closed engine's late stopped callback reaches a detached arbiter (a no-op).
+     */
+    private fun stopListening() {
+        arbiter.detach()
+        engine?.close()
+        engine = null
+    }
 
     /** (Re)create the engine instance from the discovered wake set. Does NOT start it — the arbiter does. */
     private fun buildEngine() {
@@ -228,20 +247,16 @@ class WakeService :
             return
         }
         when {
-            // Defensive/unreachable: WakeRegistry.discover() always returns at least the built-in jarvis
-            // default, so the wake set is never empty in practice. If that ever changes, note this path stops
-            // the engine outside the arbiter (only the engine's stop callback reports it, as a lost capture) —
-            // route it through the arbiter before relying on an empty wake set.
+            // Unreachable today (discover() always returns the built-in jarvis default), but routed through the
+            // arbiter so capture never stops behind its back.
             newWords.isEmpty() -> {
-                DebugLog.log("wake set now empty → stopping engine")
-                engine?.close()
-                engine = null
+                DebugLog.log("wake set now empty → detaching arbiter, stopping engine")
+                stopListening()
             }
 
             engine == null -> {
-                DebugLog.log("wake set now non-empty → building engine")
-                buildEngine()
-                arbiter.reconcile()
+                DebugLog.log("wake set now non-empty → building engine, starting arbiter")
+                startListening()
             }
 
             else -> {
