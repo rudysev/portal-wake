@@ -10,8 +10,8 @@ android {
 
   defaultConfig {
     applicationId = "com.portal.wake"
-    minSdk = 28          // Android 9 — covers all Portal devices (incl. 1st-gen Portal+ "aloha")
-    targetSdk = 29       // Android 10 — Portal-era behavior; background-started FG mic still allowed
+    minSdk = 28 // Android 9 — covers all Portal devices (incl. 1st-gen Portal+ "aloha")
+    targetSdk = 29 // Android 10 — Portal-era behavior; background-started FG mic still allowed
     versionCode = 5
     versionName = "2.3"
   }
