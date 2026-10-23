@@ -97,11 +97,6 @@ class WakeService :
     private var engine: WakeMicEngine? = null
     private var targets: List<WakeTarget> = emptyList()
     private var started = false
-
-    // Whether the current engine is started (reflects what we last applied). The arbiter drives this via
-    // startCapture/pauseCapture, but onError/onStopped also clear it out-of-band (guarded by engineGeneration)
-    // so the next reconcile retries — the arbiter's view can lag by up to one poll tick by design.
-    private var capturing = false
     private var engineGeneration = 0 // main-only; bumped per built engine to ignore a replaced engine's onStopped
 
     /**
@@ -163,7 +158,6 @@ class WakeService :
         runCatching { unregisterReceiver(packageReceiver) }
         engine?.close()
         engine = null
-        capturing = false
         // NB: deliberately do NOT DebugLog.close() here. DebugLog is a process-wide singleton shared with
         // BootReceiver and the next service instance; its file path never changes, so onCreate's re-set is a
         // no-op (one reused writer for the process's life, not a per-restart leak). Closing on a per-service
@@ -173,18 +167,12 @@ class WakeService :
 
     // ---- MicArbiter.CaptureController (engine-side seam) --------------------------------------------
 
-    override fun startCapture(): Boolean {
-        val ok = engine?.start() ?: false
-        capturing = ok
-        return ok
-    }
+    // "Start requested" (see the CaptureController contract); a busy mic comes back via onError → onCaptureLost.
+    override fun startCapture(): Boolean = engine?.start() ?: false
 
     override fun pauseCapture() {
         engine?.pause()
-        capturing = false
     }
-
-    override val isCapturing: Boolean get() = capturing
 
     // ---- engine lifecycle --------------------------------------------------------------------------
 
@@ -198,6 +186,9 @@ class WakeService :
             return
         }
         val generation = ++engineGeneration
+        // Both engine callbacks report a lost capture (the arbiter ignores the 2nd of an error-then-stopped
+        // pair); a replaced engine's late callbacks are dropped by the generation check.
+        val captureLost = { if (engineGeneration == generation) arbiter.onCaptureLost() }
         engine = WakeMicEngine(
             context = applicationContext,
             config = WakeMicConfig(
@@ -207,9 +198,9 @@ class WakeService :
                 onWake = ::onWake,
                 onError = { message ->
                     DebugLog.log("engine error: $message")
-                    if (engineGeneration == generation) capturing = false
+                    captureLost()
                 },
-                onStopped = { if (engineGeneration == generation) capturing = false },
+                onStopped = { captureLost() },
                 beforeMicAcquire = { MicLiberator.freeMic(applicationContext) },
             ),
         )
@@ -239,13 +230,12 @@ class WakeService :
         when {
             // Defensive/unreachable: WakeRegistry.discover() always returns at least the built-in jarvis
             // default, so the wake set is never empty in practice. If that ever changes, note this path stops
-            // the engine outside the arbiter (capturing=false directly) and so does NOT reset the arbiter's
-            // gate/contention — route it through the arbiter before relying on an empty wake set.
+            // the engine outside the arbiter (only the engine's stop callback reports it, as a lost capture) —
+            // route it through the arbiter before relying on an empty wake set.
             newWords.isEmpty() -> {
                 DebugLog.log("wake set now empty → stopping engine")
                 engine?.close()
                 engine = null
-                capturing = false
             }
 
             engine == null -> {
