@@ -163,7 +163,7 @@ install_app() {
     fi
   fi
   step "Installing portal-wake ($(basename "$apk"))"
-  a install -r -d "$apk" >/dev/null 2>&1 && ok "Installed $PKG" || die "Install failed."
+  if a install -r -d "$apk" >/dev/null 2>&1; then ok "Installed $PKG"; else die "Install failed."; fi
 }
 
 grant_mic() {
@@ -178,9 +178,11 @@ free_mic_slot() {
   # disable it if present. Uninstall re-enables it. (We never touch the Alexa client.)
   if a shell pm list packages "$MILLENNIUM_PKG" 2>/dev/null | tr -d '\r' | grep -q "package:$MILLENNIUM_PKG"; then
     step "Freeing the microphone (disabling Meta's \"Hey Alexa\" detector)"
-    a shell pm disable-user --user 0 "$MILLENNIUM_PKG" >/dev/null 2>&1 \
-      && ok "Disabled $MILLENNIUM_PKG" \
-      || warn "Couldn't disable $MILLENNIUM_PKG — wake may be starved by the native \"Hey Alexa\" detector."
+    if a shell pm disable-user --user 0 "$MILLENNIUM_PKG" >/dev/null 2>&1; then
+      ok "Disabled $MILLENNIUM_PKG"
+    else
+      warn "Couldn't disable $MILLENNIUM_PKG — wake may be starved by the native \"Hey Alexa\" detector."
+    fi
   else
     ok "No competing \"Hey Alexa\" detector on this device"
   fi
@@ -230,11 +232,11 @@ do_uninstall() {
   # the default `pm list packages` on some Android builds, which would silently skip the re-enable.
   if a shell pm list packages -d "$MILLENNIUM_PKG" 2>/dev/null | tr -d '\r' | grep -q "package:$MILLENNIUM_PKG"; then
     step "Re-enabling Meta's \"Hey Alexa\" detector"
-    a shell pm enable "$MILLENNIUM_PKG" >/dev/null 2>&1 && ok "Re-enabled $MILLENNIUM_PKG" || warn "Couldn't re-enable $MILLENNIUM_PKG — re-enable it from the Portal's app settings."
+    if a shell pm enable "$MILLENNIUM_PKG" >/dev/null 2>&1; then ok "Re-enabled $MILLENNIUM_PKG"; else warn "Couldn't re-enable $MILLENNIUM_PKG — re-enable it from the Portal's app settings."; fi
   fi
   step "Stopping and removing portal-wake"
   a shell am force-stop "$PKG" >/dev/null 2>&1
-  a uninstall "$PKG" >/dev/null 2>&1 && ok "Uninstalled $PKG" || warn "portal-wake was not installed."
+  if a uninstall "$PKG" >/dev/null 2>&1; then ok "Uninstalled $PKG"; else warn "portal-wake was not installed."; fi
   printf "\n%s✓ Done. portal-wake removed; the stock \"Hey Alexa\" detector is back.%s\n" "$G$B" "$N"
 }
 
