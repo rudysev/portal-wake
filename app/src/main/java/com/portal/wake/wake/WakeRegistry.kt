@@ -127,7 +127,7 @@ object WakeRegistry {
      * in its strict floor without an Android `PackageManager`; the installed assistant overrides it via its
      * manifest spec.
      */
-    internal val BUILTIN_JARVIS = WakeWord.fromPhrase("hey jarvis", id = "jarvis", minConf = WakeMatcher.STRICT_MIN_CONF)!!
+    internal val BUILTIN_JARVIS = builtin("hey jarvis", id = "jarvis")
 
     /**
      * Built-in wake words used when no plugin covers them. "jarvis" routes to a registered handler (the
@@ -144,11 +144,14 @@ object WakeRegistry {
     private fun defaults(pm: PackageManager): List<WakeTarget> = buildList {
         add(WakeTarget(BUILTIN_JARVIS, component = null, source = null))
         if (isInstalled(pm, Falcon.PACKAGE)) {
-            add(WakeTarget(WakeWord.fromPhrase("hey alexa", id = "alexa", minConf = WakeMatcher.STRICT_MIN_CONF)!!, component = null, source = null))
+            add(WakeTarget(builtin("hey alexa", id = "alexa"), component = null, source = null))
         } else {
             DebugLog.log("registry: ${Falcon.PACKAGE} not installed — skipping 'hey alexa'")
         }
     }
+
+    /** A built-in strict wake word. Its phrase is a non-blank literal, so [WakeWord.fromPhrase] always builds it. */
+    private fun builtin(phrase: String, id: String): WakeWord = checkNotNull(WakeWord.fromPhrase(phrase, id = id, minConf = WakeMatcher.STRICT_MIN_CONF)) { "built-in phrase \"$phrase\"" }
 
     private fun isInstalled(pm: PackageManager, pkg: String): Boolean = runCatching {
         @Suppress("DEPRECATION")
