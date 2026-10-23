@@ -9,13 +9,13 @@ import com.portal.wake.wake.WakeContract
 import com.portal.wake.wake.WakeTarget
 
 /**
- * Match dispatch for [WakeService]: hands a fired wake to its consumer — a registered handler app via
+ * The handoff for [WakeService]: stands down and wakes a fired wake word's consumer — a wake plugin via
  * [WakeContract.ACTION_WAKE], or the native Alexa app via its LISTEN intent for "alexa". Main thread only.
  */
-internal class WakeDispatcher(private val context: Context, private val arbiter: MicArbiter) {
+internal class WakeHandoff(private val context: Context, private val arbiter: MicArbiter) {
 
-    /** Trigger the consumer of wake [id] among the discovered [targets]. */
-    fun dispatch(targets: List<WakeTarget>, id: String) {
+    /** Hand off wake [id] to its consumer among the discovered [targets]. */
+    fun handOff(targets: List<WakeTarget>, id: String) {
         val target = targets.firstOrNull { it.word.id == id }
         if (target == null) {
             DebugLog.log("wake '$id' has no target (ignored)")
@@ -23,7 +23,7 @@ internal class WakeDispatcher(private val context: Context, private val arbiter:
         }
         val component = target.component
         when {
-            id == ROUTE_ALEXA -> handOff("alexa → falcon LISTEN") {
+            id == ROUTE_ALEXA -> standDownThenWake("alexa → falcon LISTEN") {
                 context.sendBroadcast(
                     Intent(Falcon.LISTEN_ACTION)
                         .setPackage(Falcon.PACKAGE)
@@ -31,7 +31,7 @@ internal class WakeDispatcher(private val context: Context, private val arbiter:
                 )
             }
 
-            component != null -> handOff("$id → ${target.source}") {
+            component != null -> standDownThenWake("$id → ${target.source}") {
                 context.sendBroadcast(
                     Intent(WakeContract.ACTION_WAKE)
                         .setComponent(component)
@@ -45,11 +45,11 @@ internal class WakeDispatcher(private val context: Context, private val arbiter:
     }
 
     /**
-     * Release the mic so the consumer can take it (via the arbiter), trigger the consumer ([send]), and let
-     * the arbiter recover by detection. Order is deliberate: the mic must be **free before the consumer
-     * starts**, so [MicArbiter.standDown] pauses capture before we broadcast.
+     * Stand down so the consumer can take the mic (via the arbiter), wake the consumer ([send]), and let the
+     * arbiter reclaim by detection. Order is deliberate: the mic must be **free before the consumer starts**,
+     * so [MicArbiter.standDown] pauses capture before we broadcast.
      */
-    private inline fun handOff(what: String, send: () -> Unit) {
+    private inline fun standDownThenWake(what: String, send: () -> Unit) {
         arbiter.standDown(what)
         runCatching { send() }.onFailure { DebugLog.log("handoff trigger failed: ${it.message}") }
     }

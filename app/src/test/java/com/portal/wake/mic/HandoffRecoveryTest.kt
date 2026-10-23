@@ -8,7 +8,7 @@ import org.junit.Test
 
 /**
  * The reclaim rule: take the mic back only once the consumer that held it has stopped — never on the
- * transient "no one recording" right after our own release. A wake handoff reclaims [Reclaim.NOW]; a
+ * transient "no one recording" right after our own stand-down. A wake handoff reclaims [Reclaim.NOW]; a
  * detection stand-down asks the caller to [Reclaim.CONFIRM] against live configs first.
  */
 class HandoffRecoveryTest {
@@ -32,12 +32,12 @@ class HandoffRecoveryTest {
         assertFalse(r.active)
     }
 
-    // ---- wake handoff (we released first; consumer grabs later) -------------------------------------
+    // ---- wake handoff (we stood down first; consumer grabs later) -------------------------------------
 
     @Test fun wakeHandoff_noneUntilConsumerRecords_thenNowOnRelease() {
         val r = HandoffRecovery()
         r.onHandoff()
-        assertEquals(Reclaim.NONE, r.onForeignRecording(false)) // our own release — no consumer yet
+        assertEquals(Reclaim.NONE, r.onForeignRecording(false)) // our own stand-down — no consumer yet
         assertEquals(Reclaim.NONE, r.onForeignRecording(false))
         assertEquals(Reclaim.NONE, r.onForeignRecording(true)) // consumer grabbed → borrowed
         assertEquals(Reclaim.NONE, r.onForeignRecording(true)) // still borrowed
