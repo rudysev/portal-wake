@@ -5,6 +5,7 @@ plugins {
   alias(libs.plugins.kotlin.android) apply false
   // ktlint via kotlinter (ADR 0001), applied here for the Gradle-script lint below.
   alias(libs.plugins.kotlinter)
+  alias(libs.plugins.detekt) apply false
   // Dependency advice (`./gradlew buildHealth`), run as its own CI job and not part of `check`. :app applies it too
   // (no auto-apply from the root).
   alias(libs.plugins.dependency.analysis)

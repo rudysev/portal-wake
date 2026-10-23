@@ -13,6 +13,8 @@ json = "20240303"
 # 3.19's kotlin-bom 2.4.0 sets the build's kotlin-daemon-client to at least 2.4.0, so KGP (`kotlin`) must stay
 # >= 2.4.0 or the Kotlin daemon fails (NoSuchMethodError).
 dependencyAnalysis = "3.19.2"
+# detekt 2.0 is still alpha (1.x has no AGP 9 support); quality-tooling ticket 08 moves it to stable.
+detekt = "2.0.0-alpha.6"
 
 [libraries]
 # portal-commons modules: no version, because includeBuild("../portal-commons") substitutes them from source.
@@ -29,3 +31,4 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlinter = { id = "org.jmailen.kotlinter", version.ref = "kotlinter" }
 dependency-analysis = { id = "com.autonomousapps.dependency-analysis", version.ref = "dependencyAnalysis" }
+detekt = { id = "dev.detekt", version.ref = "detekt" }
