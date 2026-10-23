@@ -1,0 +1,68 @@
+package com.portal.wake.service
+
+import android.content.Context
+import android.content.Intent
+import com.portal.commons.DebugLog
+import com.portal.wake.mic.MicArbiter
+import com.portal.wake.system.Falcon
+import com.portal.wake.wake.WakeContract
+import com.portal.wake.wake.WakeTarget
+
+/**
+ * Match dispatch for [WakeService]: hands a fired wake to its consumer — a registered handler app via
+ * [WakeContract.ACTION_WAKE], or the native Alexa app via its LISTEN intent for "alexa". Main thread only.
+ */
+internal class WakeDispatcher(private val context: Context, private val arbiter: MicArbiter) {
+
+    /** Trigger the consumer of wake [id] among the discovered [targets]. */
+    fun dispatch(targets: List<WakeTarget>, id: String) {
+        val target = targets.firstOrNull { it.word.id == id }
+        if (target == null) {
+            DebugLog.log("wake '$id' has no target (ignored)")
+            return
+        }
+        val component = target.component
+        when {
+            id == ROUTE_ALEXA -> handOff("alexa → falcon LISTEN") {
+                context.sendBroadcast(
+                    Intent(Falcon.LISTEN_ACTION)
+                        .setPackage(Falcon.PACKAGE)
+                        .addFlags(HANDOFF_FLAGS),
+                )
+            }
+
+            component != null -> handOff("$id → ${target.source}") {
+                context.sendBroadcast(
+                    Intent(WakeContract.ACTION_WAKE)
+                        .setComponent(component)
+                        .putExtra(WakeContract.EXTRA_WAKE_ID, id)
+                        .addFlags(HANDOFF_FLAGS),
+                )
+            }
+
+            else -> DebugLog.log("WAKE '$id' (no handler installed)")
+        }
+    }
+
+    /**
+     * Release the mic so the consumer can take it (via the arbiter), trigger the consumer ([send]), and let
+     * the arbiter recover by detection. Order is deliberate: the mic must be **free before the consumer
+     * starts**, so [MicArbiter.standDown] pauses capture before we broadcast.
+     */
+    private inline fun handOff(what: String, send: () -> Unit) {
+        arbiter.standDown(what)
+        runCatching { send() }.onFailure { DebugLog.log("handoff trigger failed: ${it.message}") }
+    }
+
+    private companion object {
+        // Built-in "hey alexa" convenience route: trigger the Portal's native Alexa client directly (see
+        // [Falcon]). Third-party handlers use the ACTION_WAKE contract instead of being hard-coded here.
+        const val ROUTE_ALEXA = "alexa"
+
+        // Handoff broadcast flags. INCLUDE_STOPPED_PACKAGES so a force-stopped consumer still receives it;
+        // RECEIVER_FOREGROUND so it goes through Android's foreground broadcast queue (the background queue
+        // adds noticeable latency to a cold consumer's "hey jarvis" → assistant-ready path).
+        const val HANDOFF_FLAGS =
+            Intent.FLAG_INCLUDE_STOPPED_PACKAGES or Intent.FLAG_RECEIVER_FOREGROUND
+    }
+}

@@ -55,6 +55,9 @@ class WakeService :
         MicArbiter(AudioManagerGate(audioManager), HandlerScheduler(main), this)
     }
 
+    // Hands a fired wake to its consumer (on main), releasing the mic through the arbiter first.
+    private val dispatcher by lazy { WakeDispatcher(this, arbiter) }
+
     /**
      * The Android recording-config callback: registered on [main] in [onCreate], it forwards the session ids
      * to the (Android-free) [arbiter] — which owns the contention/recovery decision; this is only the Android
@@ -67,32 +70,6 @@ class WakeService :
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) logSilencing(list)
             arbiter.onRecordingConfigs(list.map { it.clientAudioSessionId })
         }
-    }
-
-    /**
-     * API 29+ diagnostic for the Android 10 microphone wall. API 29 replaced single-owner mic capture with
-     * *concurrent capture + silencing*: a recorder keeps running but its audio is replaced with **silence**
-     * ([AudioRecordingConfiguration.isClientSilenced]) rather than being blocked — no read error, no gap, just
-     * no wake. On this Portal's Android 10 build a **sideloaded background foreground-service is silenced even
-     * as the sole capturer**; only the resumed top Activity records. Confirmed on device via `dumpsys audio`
-     * (`pack:com.portal.wake … silenced:true`). Attempts to escape it — holding the assistant role
-     * (`VoiceInteractionService`), a `TYPE_APPLICATION_OVERLAY` window, forcing the `RECORD_AUDIO` appop — all
-     * failed; the only real fix is a privileged/system install (`CAPTURE_AUDIO_HOTWORD`), blocked on a locked
-     * retail unit. So headless background wake is **not supported on Android 10**; this log is what proved that
-     * and is kept for future re-investigation (e.g. on an unlocked device).
-     *
-     * We deliberately do **not** try to identify *which* config is ours: on this Portal the session ids in the
-     * callback don't match our `AudioRecord`'s (the same reason [com.portal.wake.mic.MicContentionDetector]
-     * seeds rather than compares), so we log the whole picture. Pure logging; it is **not** fed to the arbiter.
-     */
-    @RequiresApi(Build.VERSION_CODES.Q)
-    private fun logSilencing(configs: List<AudioRecordingConfiguration>) {
-        val silenced = configs.filter { it.isClientSilenced }
-        if (silenced.isEmpty()) return
-        DebugLog.log(
-            "silencing: ${silenced.size}/${configs.size} recording client(s) silenced " +
-                "(sessions=${silenced.map { it.clientAudioSessionId }}) — concurrent-capture policy active",
-        )
     }
 
     private var engine: WakeMicEngine? = null
@@ -215,7 +192,9 @@ class WakeService :
                 wakeWords = words,
                 detectors = listOf(WakeDetectors.vosk()),
                 onDetectorUnavailable = { DebugLog.log("wake unavailable (model missing) — service idle") },
-                onWake = ::onWake,
+                // Runs on the engine's capture thread: only hop to main, where all orchestration runs
+                // single-threaded, so the capture thread only captures.
+                onWake = { event -> main.post { dispatcher.dispatch(targets, event.wakeId) } },
                 onError = { message ->
                     DebugLog.log("engine error: $message")
                     captureLost()
@@ -267,69 +246,10 @@ class WakeService :
         }
     }
 
-    // ---- match dispatch ----------------------------------------------------------------------------
-
-    /**
-     * Called by the engine on its capture thread when a wake fires. We do nothing here but hop to the main
-     * thread — all orchestration runs single-threaded on main, so the capture thread only captures.
-     */
-    private fun onWake(event: WakeEvent) {
-        main.post { dispatch(event.wakeId) }
-    }
-
-    private fun dispatch(id: String) {
-        val target = targets.firstOrNull { it.word.id == id }
-        if (target == null) {
-            DebugLog.log("wake '$id' has no target (ignored)")
-            return
-        }
-        val component = target.component
-        when {
-            id == ROUTE_ALEXA -> handOff("alexa → falcon LISTEN") {
-                sendBroadcast(
-                    Intent(Falcon.LISTEN_ACTION)
-                        .setPackage(Falcon.PACKAGE)
-                        .addFlags(HANDOFF_FLAGS),
-                )
-            }
-
-            component != null -> handOff("$id → ${target.source}") {
-                sendBroadcast(
-                    Intent(WakeContract.ACTION_WAKE)
-                        .setComponent(component)
-                        .putExtra(WakeContract.EXTRA_WAKE_ID, id)
-                        .addFlags(HANDOFF_FLAGS),
-                )
-            }
-
-            else -> DebugLog.log("WAKE '$id' (no handler installed)")
-        }
-    }
-
-    /**
-     * Release the mic so the consumer can take it (via the arbiter), trigger the consumer ([send]), and let
-     * the arbiter recover by detection. Order is deliberate: the mic must be **free before the consumer
-     * starts**, so [MicArbiter.standDown] pauses capture before we broadcast.
-     */
-    private inline fun handOff(what: String, send: () -> Unit) {
-        arbiter.standDown(what)
-        runCatching { send() }.onFailure { DebugLog.log("handoff trigger failed: ${it.message}") }
-    }
-
     companion object {
         // A single app reinstall delivers 2–3 package broadcasts (REMOVED+ADDED+REPLACED). Coalesce them into
         // one wake-set refresh so we don't re-discover 2–3× per update.
         private const val WAKE_SET_REFRESH_DEBOUNCE_MS = 1_000L
-
-        // Built-in "hey alexa" convenience route: trigger the Portal's native Alexa client directly (see
-        // [Falcon]). Third-party handlers use the ACTION_WAKE contract instead of being hard-coded here.
-        private const val ROUTE_ALEXA = "alexa"
-
-        // Handoff broadcast flags. INCLUDE_STOPPED_PACKAGES so a force-stopped consumer still receives it;
-        // RECEIVER_FOREGROUND so it goes through Android's foreground broadcast queue (the background queue
-        // adds noticeable latency to a cold consumer's "hey jarvis" → assistant-ready path).
-        private const val HANDOFF_FLAGS =
-            Intent.FLAG_INCLUDE_STOPPED_PACKAGES or Intent.FLAG_RECEIVER_FOREGROUND
 
         /**
          * Start (or no-op if already running) the always-on wake service.
@@ -352,6 +272,32 @@ class WakeService :
             ContextCompat.startForegroundService(context, Intent(context, WakeService::class.java))
         }
     }
+}
+
+/**
+ * API 29+ diagnostic for the Android 10 microphone wall. API 29 replaced single-owner mic capture with
+ * *concurrent capture + silencing*: a recorder keeps running but its audio is replaced with **silence**
+ * ([AudioRecordingConfiguration.isClientSilenced]) rather than being blocked — no read error, no gap, just
+ * no wake. On this Portal's Android 10 build a **sideloaded background foreground-service is silenced even
+ * as the sole capturer**; only the resumed top Activity records. Confirmed on device via `dumpsys audio`
+ * (`pack:com.portal.wake … silenced:true`). Attempts to escape it — holding the assistant role
+ * (`VoiceInteractionService`), a `TYPE_APPLICATION_OVERLAY` window, forcing the `RECORD_AUDIO` appop — all
+ * failed; the only real fix is a privileged/system install (`CAPTURE_AUDIO_HOTWORD`), blocked on a locked
+ * retail unit. So headless background wake is **not supported on Android 10**; this log is what proved that
+ * and is kept for future re-investigation (e.g. on an unlocked device).
+ *
+ * We deliberately do **not** try to identify *which* config is ours: on this Portal the session ids in the
+ * callback don't match our `AudioRecord`'s (the same reason [com.portal.wake.mic.MicContentionDetector]
+ * seeds rather than compares), so we log the whole picture. Pure logging; it is **not** fed to the arbiter.
+ */
+@RequiresApi(Build.VERSION_CODES.Q)
+private fun logSilencing(configs: List<AudioRecordingConfiguration>) {
+    val silenced = configs.filter { it.isClientSilenced }
+    if (silenced.isEmpty()) return
+    DebugLog.log(
+        "silencing: ${silenced.size}/${configs.size} recording client(s) silenced " +
+            "(sessions=${silenced.map { it.clientAudioSessionId }}) — concurrent-capture policy active",
+    )
 }
 
 /** Thin adapter exposing the main [Handler]'s delayed-post API as the arbiter's [MicArbiter.Scheduler]. */
