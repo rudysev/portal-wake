@@ -1,5 +1,6 @@
 package com.portal.wake.mic
 
+import com.portal.commons.audio.CaptureLoss
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -58,6 +59,7 @@ class MicArbiterTest {
     private val audio = FakeAudio()
     private var clock = 0L
     private val arbiter = MicArbiter(audio, sch, ctl) { clock }
+    private val notGranted = CaptureLoss.NotGranted("microphone unavailable")
 
     @Test
     fun start_beginsCaptureWhenIdle_andArmsThePoll() {
@@ -242,7 +244,7 @@ class MicArbiterTest {
     @Test
     fun retry_staysPausedWhenACallBeganSinceTheLastPoll() {
         arbiter.start()
-        arbiter.onCaptureLost() // the mic wouldn't open → reported as a loss, retry pending
+        arbiter.onCaptureLost(notGranted) // the mic wouldn't open → reported as a loss, retry pending
 
         audio.inCall = true // call begins between poll ticks
         arbiter.reconcile() // a retry (e.g. after a wake-set refresh) would now succeed
@@ -260,7 +262,7 @@ class MicArbiterTest {
         assertTrue(arbiter.isCapturing) // marked running as soon as the start is requested
         assertEquals(1, ctl.startCount)
 
-        arbiter.onCaptureLost() // the mic wouldn't open (not granted): a loss, nobody else recording
+        arbiter.onCaptureLost(notGranted) // the mic wouldn't open (not granted): a loss, nobody else recording
         assertFalse(arbiter.isCapturing)
 
         sch.fire(MicArbiter.STANDDOWN_POLL_MS) // poll retries
@@ -318,7 +320,7 @@ class MicArbiterTest {
     fun captureLossToAnotherRecorder_waitsBorrowedThenReclaimsAfterConfirmedRelease() {
         arbiter.start()
         audio.hasActiveRecording = true // another app holds the mic (e.g. busy at start-up)
-        arbiter.onCaptureLost()
+        arbiter.onCaptureLost(notGranted)
         assertFalse(arbiter.isCapturing)
 
         sch.fire(MicArbiter.STANDDOWN_POLL_MS) // the poll must NOT retry against the holder
@@ -341,7 +343,7 @@ class MicArbiterTest {
     @Test
     fun captureLossWithNoOtherRecorder_isRetriedOnTheNextPoll() {
         arbiter.start()
-        arbiter.onCaptureLost() // a device fault: nobody else is recording
+        arbiter.onCaptureLost(notGranted) // not granted, and nobody else is recording
         assertFalse(arbiter.isCapturing)
         assertEquals(1, ctl.startCount)
 
@@ -355,7 +357,7 @@ class MicArbiterTest {
     fun captureLoss_resetsContentionTracking_andTheNextStartReSeeds() {
         arbiter.start()
         arbiter.onRecordingConfigs(listOf(1)) // seed our own session id
-        arbiter.onCaptureLost() // device fault → contention stops tracking
+        arbiter.onCaptureLost(notGranted) // a loss → contention stops tracking
 
         arbiter.onRecordingConfigs(listOf(2)) // while not capturing, a new id is not "foreign mic"
         clock = 1_000 // past the first start's seed window, so only a fresh re-seed accepts the next id
@@ -371,9 +373,9 @@ class MicArbiterTest {
     }
 
     @Test
-    fun deviceFaultRetry_staysPausedDuringACall() {
+    fun lossRetry_staysPausedDuringACall() {
         arbiter.start()
-        arbiter.onCaptureLost() // device fault → retry pending
+        arbiter.onCaptureLost(notGranted) // a loss with nobody recording → retry pending
 
         audio.inCall = true // call begins between poll ticks
         arbiter.reconcile() // a retry before the poll sees the call
@@ -392,7 +394,7 @@ class MicArbiterTest {
     fun captureLoss_isAuthoritative_soTheEngineIsNotPausedAgain() {
         arbiter.start()
         audio.hasActiveRecording = true
-        arbiter.onCaptureLost() // the engine is already idle after a loss
+        arbiter.onCaptureLost(notGranted) // the engine is already idle after a loss
 
         assertFalse(arbiter.isCapturing)
         assertEquals(0, ctl.pauseCount)
