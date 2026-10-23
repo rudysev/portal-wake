@@ -1,4 +1,4 @@
-package com.portal.wake.wake
+package com.portal.wake.mic
 
 /**
  * Detects when **another app** grabs the mic while portal-wake is actively capturing — without comparing
@@ -12,7 +12,7 @@ package com.portal.wake.wake
  * foreign and we should stand down. The [seedMs] window only covers the invisible-wake case where no config
  * callback arrives until after it. Drive it from `AudioManager.AudioRecordingCallback` while capturing.
  */
-class MicContentionDetector(private val seedMs: Long = DEFAULT_SEED_MS) {
+internal class MicContentionDetector(private val seedMs: Long = DEFAULT_SEED_MS) {
 
     private enum class Phase { IDLE, SEEDING, TRACKING }
     private var phase = Phase.IDLE

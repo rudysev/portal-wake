@@ -1,6 +1,6 @@
-package com.portal.wake.wake
+package com.portal.wake.mic
 
-import com.portal.wake.wake.HandoffRecovery.Reclaim
+import com.portal.wake.mic.HandoffRecovery.Reclaim
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

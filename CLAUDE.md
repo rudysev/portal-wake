@@ -45,10 +45,11 @@ API); **alexa** → the native Alexa client `falcon` (via its `LISTEN` intent). 
   **debounced** (`RECLAIM_DEBOUNCE_MS`, re-checked against live configs) to avoid re-grabbing instantly; and
   a detection stand-down arms recovery directly in **BORROWED** (the consumer is already recording — unlike
   a wake handoff there is no later "consumer starts" edge to see).
-- **Stand down for calls; never fight them.** `WakeService` polls the audio mode (no mode-change event on
-  API 28) and feeds `CallGate` (`AudioManager.getMode() != MODE_NORMAL`) into the pure `CaptureGate`; while
-  a call holds, capture is paused (the shared session releases the mic) and not re-grabbed until the call
-  ends. Handoff is the gate's other pause reason, so a call arriving mid-handoff blocks reclaim until it
+- **Stand down for calls; never fight them.** `MicArbiter` polls its `AudioGate.inCall` seam (no mode-change
+  event on API 28; the production adapter in `WakeService` reads `AudioManager.getMode() != MODE_NORMAL`) and
+  also re-reads it live immediately before every capture start, so a call always wins the mic. While a call
+  holds, capture is paused (the shared session releases the mic) and not re-grabbed until the call ends.
+  Handoff is the arbiter's other pause reason, so a call arriving mid-handoff blocks reclaim until it
   clears. Even Meta's own millennium fails this — it detects the call but keeps re-grabbing, churning it; portal-wake doesn't.
 - **Don't kill falcon; do suppress millennium.** `falcon` (Alexa client) never contends for our handset
   mic (verified) and the **alexa** route drives it via its `LISTEN` intent — leave it running.
@@ -82,22 +83,23 @@ API); **alexa** → the native Alexa client `falcon` (via its `LISTEN` intent). 
 
 ## Layout
 
-`service/` = lifecycle + orchestration (WakeService = engine lifecycle + match→consumer routing + the thin
-Android adapters; MicArbiter = the **mic-arbitration state machine** [Android-free, [tested]]: it owns
-handoff/reclaim + call stand-down + foreign-mic contention and the single `reconcile()` that starts/pauses
-capture per the CaptureGate, driving the engine through a `CaptureController` seam and reading Android only
-via injected `Scheduler`/`AudioGate` seams; WakeNotification = the foreground-service notification; BootReceiver).
-`audio/` = `CallGate` = in-call gate [tested] — the **only** class still here. The **wake-detection
-core** moved to `portal-commons` so `portal-assistant` can reuse it for its foreground detector (see the
-shared-code note below): `WakeMicEngine` = mic + capture over `PcmCaptureSession`, configured via
+`service/` = Android lifecycle + adapters (WakeService = engine lifecycle + match→consumer routing + the thin
+Android adapters behind the arbiter's seams — `AudioManagerGate`, `HandlerScheduler`, the recording callback;
+WakeNotification = the foreground-service notification; BootReceiver).
+`mic/` = mic arbitration, Android-free and unit-tested. `MicArbiter` = the **mic-arbitration state machine**:
+it owns handoff/reclaim + call stand-down + foreign-mic contention, holds the two pause reasons (call,
+handoff) and the single `reconcile()` that starts/pauses capture, drives the engine through a
+`CaptureController` seam and reads Android only via injected `Scheduler`/`AudioGate` seams. Its `internal`
+helpers: `HandoffRecovery` = reclaim rule; `MicContentionDetector` = foreign-recording-session detector.
+The **wake-detection core** lives in `portal-commons` so `portal-assistant` can reuse it for its foreground
+detector (see the shared-code note below): `WakeMicEngine` = mic + capture over `PcmCaptureSession`, configured via
 `WakeMicConfig` + `WakeDetectors.vosk()`; `VoskWakeDetector` = Vosk recognition policy [pre-ready
 `PcmRingBuffer` + handoff cooldown + idle-reset]; `WakeRecognizer` = Vosk boundary [warm-up + ready-gate];
 `WakeMatcher` = accuracy gate [tested]; `WakeWord`. `WakeMicConfig.beforeMicAcquire` is the mic-slot hook —
 portal-wake passes `MicLiberator.freeMic`, the assistant passes none.
 `wake/` = the extensibility layer (WakeContract = the published plugin contract [tested], WakeSpec
-= builds a WakeWord from a plugin's named wake meta-data [tested], WakeRegistry = discovery, WakeTarget = word↔handler, HandoffRecovery =
-reclaim rule [tested], MicContentionDetector = foreign-recording-session detector [tested], CaptureGate =
-two-reason capture coordinator [call + handoff; tested]).
+= builds a WakeWord from a plugin's named wake meta-data [tested], WakeRegistry = discovery, WakeTarget =
+word↔handler).
 `system/` — `MicLiberator` frees the mic slot; `Falcon` drives the native Alexa client via its `LISTEN`
 intent (the **alexa** route). **Shared code lives in `portal-commons` (the sibling
 `../portal-commons`): the pure-JVM `com.portal:commons` (`PcmCaptureSession`/`PcmDevice` the capture thread
@@ -109,8 +111,9 @@ intent (the **alexa** route). **Shared code lives in `portal-commons` (the sibli
 consumed by `portal-wake` AND `portal-assistant`** (so an edit to the shared wake classes changes both apps'
 detectors). The wake plugin contract
 (`WakeContract`) and its `WakeSpec` builder of the named wake meta-data are **this app's own** (`wake/`), not
-shared: the literal wire strings (the meta-data keys) are the contract, so plugins like portal-assistant mirror them.** Pure logic (WakeMatcher, CallGate,
-HandoffRecovery, CaptureGate, WakeSpec) is unit-tested; mic/service behavior is device-tested;
+shared: the literal wire strings (the meta-data keys) are the contract, so plugins like portal-assistant mirror them.** Pure logic (MicArbiter,
+HandoffRecovery, MicContentionDetector, WakeContract, WakeSpec, WakeRegistry's spec/same-wake-set rules) is
+unit-tested; mic/service behavior is device-tested;
 `commons` has its own unit tests (incl. PcmCaptureSession).
 
 ## Build / deploy
@@ -138,3 +141,7 @@ Default five-role vocabulary (needs-triage, needs-info, ready-for-agent, ready-f
 ### Domain docs
 
 Single-context: one `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Grilling (/grill-with-docs)
+
+Ask one question at a time, then STOP and wait for the user's answer. Don't answer your own questions, don't generate the next round ahead of the answer, and don't begin implementation without the user's explicit permission.
