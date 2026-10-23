@@ -242,7 +242,7 @@ class MicArbiterTest {
     @Test
     fun retry_staysPausedWhenACallBeganSinceTheLastPoll() {
         arbiter.start()
-        arbiter.onCaptureLost() // the start was refused → reported as a loss, retry pending
+        arbiter.onCaptureLost() // the mic wouldn't open → reported as a loss, retry pending
 
         audio.inCall = true // call begins between poll ticks
         arbiter.reconcile() // a retry (e.g. after a wake-set refresh) would now succeed
@@ -255,12 +255,12 @@ class MicArbiterTest {
     }
 
     @Test
-    fun refusedStart_isMarkedRunning_thenRetriedThroughTheLossPath() {
+    fun notGrantedStart_isMarkedRunning_thenRetriedThroughTheLossPath() {
         arbiter.start()
         assertTrue(arbiter.isCapturing) // marked running as soon as the start is requested
         assertEquals(1, ctl.startCount)
 
-        arbiter.onCaptureLost() // the engine refuses (wedged session): a loss, nobody else recording
+        arbiter.onCaptureLost() // the mic wouldn't open (not granted): a loss, nobody else recording
         assertFalse(arbiter.isCapturing)
 
         sch.fire(MicArbiter.STANDDOWN_POLL_MS) // poll retries
