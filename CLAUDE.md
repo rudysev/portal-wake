@@ -78,7 +78,7 @@ API); **alexa** → the native Alexa client `falcon` (via its `LISTEN` intent). 
   bar"), and forcing the `RECORD_AUDIO` appop. The only real fix is a privileged/system install
   (`/system/priv-app` + `CAPTURE_AUDIO_HOTWORD`), blocked on a locked retail unit (`ro.secure=1`, no
   `adb root`/`remount`). Independently corroborated by starbrightlab/immortal#11 (a sibling gen2 unit,
-  codename "cipher", same `QKQ1.210213.001` build family). The `WakeService.logSilencing`
+  codename "cipher", same `QKQ1.210213.001` build family). The `logSilencing` (in `WakeService.kt`)
   diagnostic is what proved this and is kept for re-checking on an unlocked device. Do not add an assistant
   role / overlay / appop "fix" back — they don't work.
 
@@ -124,7 +124,7 @@ git submodule update --init --recursive   # from the portal-apps workspace: pull
 # bundle a Vosk model first — see app/src/main/assets/model-en-us/README.md
 # point Gradle at your Android SDK (ANDROID_HOME / ANDROID_SDK_ROOT or local.properties sdk.dir),
 # and build with a JDK 17 or 21 toolchain:
-./gradlew check          # verify: unit tests + Android Lint + ktlint (kotlinter); formatKotlin fixes style
+./gradlew check          # verify: unit tests + Android Lint + detekt + ktlint (kotlinter); formatKotlin fixes style
 ./gradlew assembleDebug
 ./setup.sh   # install + grant mic + start headless + free the mic slot; also enables .githooks
 npx -y @meta-quest/hzdb adb shell "cat /sdcard/Android/data/com.portal.wake/files/debug.txt"
@@ -138,13 +138,31 @@ warning fails it (and so pre-push and CI). There is no `lint-baseline.xml`: supp
 (`AndroidGradlePluginVersion`, `GradleDependency`, `NewerVersionAvailable`) are disabled, because they query the
 network and fail whenever upstream ships a release. Report: `app/build/reports/lint-results-debug.html`.
 
+## detekt
+
+`check` also runs detekt 2.0.0-alpha.6 (`dev.detekt`; still alpha, because detekt 1.x doesn't support AGP 9;
+quality-tooling ticket 08 moves it to stable) with type resolution: `detektMain` and `detektTest`, every variant. The
+config is detekt's defaults plus `config/detekt/detekt.yml`, identical in portal-commons, portal-wake and
+portal-assistant (change all three together): the coroutine opt-ins (`GlobalCoroutineUsage`, `InjectDispatcher`,
+`SleepInsteadOfDelay`, `SuspendFunSwallowedCancellation`), any TODO/FIXME/STOPSHIP comment forbidden, `@Composable`
+exempt from `FunctionNaming`, and warnings as errors. There is no baseline: suppress inline only
+(`@Suppress("RuleId")`), each with a reason comment. Lines are capped at 120: detekt's default `MaxLineLength`, and
+`max_line_length = 120` in `.editorconfig` for ktlint. Reports: `app/build/reports/detekt/`.
+
+With KGP 2.4, a compiler warning (`allWarningsAsErrors`) fails the build with only "warnings found and -Werror
+specified"; run the build with `--info` to see the warnings themselves.
+
 ## Hooks
 
-`git config core.hooksPath .githooks` (done by `./setup.sh`). `pre-commit` runs the `ktlint` CLI on staged
-`.kt`/`.kts` files and `shellcheck` on staged shell scripts (`*.sh`, `*.command`, `.githooks/*`), and rejects on
+`git config core.hooksPath .githooks` (done by `./setup.sh`). `pre-commit` runs the `ktlint` and `detekt-cli` CLIs on
+staged `.kt`/`.kts` files and `shellcheck` on staged shell scripts (`*.sh`, `*.command`, `.githooks/*`), and rejects on
 findings (never auto-fixes; `brew install ktlint shellcheck`). For ktlint it refuses a CLI other than ktlint 1.8.0, the
-version kotlinter 5.7.0 bundles (`gradle/libs.versions.toml`), so bump both together. `pre-push` runs
-`./gradlew check`. `--no-verify` is the deliberate escape hatch. ktlint config is `.editorconfig` only.
+version kotlinter 5.7.0 bundles (`gradle/libs.versions.toml`), so bump both together. detekt runs there without type
+resolution (about a second); the type-resolved tasks run in `check`. The hook refuses a `detekt-cli` other than the
+pinned `DETEKT_VERSION` (the Gradle plugin's version, so bump both together). Homebrew only ships detekt 1.x: install
+the CLI by unzipping `https://github.com/detekt/detekt/releases/download/v2.0.0-alpha.6/detekt-cli-2.0.0-alpha.6.zip`
+and putting its `bin/` on your `PATH`. `pre-push` runs `./gradlew check`. `--no-verify` is the deliberate escape hatch.
+ktlint config is `.editorconfig` only.
 
 ## CI
 
