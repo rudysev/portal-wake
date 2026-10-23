@@ -124,14 +124,22 @@ git submodule update --init --recursive   # from the portal-apps workspace: pull
 # bundle a Vosk model first — see app/src/main/assets/model-en-us/README.md
 # point Gradle at your Android SDK (ANDROID_HOME / ANDROID_SDK_ROOT or local.properties sdk.dir),
 # and build with a JDK 17 or 21 toolchain:
+./gradlew check          # verify: unit tests + Android Lint + ktlint (kotlinter); formatKotlin fixes style
 ./gradlew assembleDebug
-./setup.sh   # install + grant mic + start headless + free the mic slot
+./setup.sh   # install + grant mic + start headless + free the mic slot; also enables .githooks
 npx -y @meta-quest/hzdb adb shell "cat /sdcard/Android/data/com.portal.wake/files/debug.txt"
 ```
 
+## Hooks
+
+`git config core.hooksPath .githooks` (done by `./setup.sh`). `pre-commit` runs the `ktlint` CLI on staged
+`.kt`/`.kts` files and rejects on findings (never auto-fixes); it refuses a CLI other than ktlint 1.8.0, the
+version kotlinter 5.7.0 bundles (`gradle/libs.versions.toml`), so bump both together. `pre-push` runs
+`./gradlew check`. `--no-verify` is the deliberate escape hatch. ktlint config is `.editorconfig` only.
+
 ## CI
 
-`.github/workflows/ci.yml` runs `./gradlew test assembleDebug` on every push to `main`, on `workflow_dispatch`, and
+`.github/workflows/ci.yml` runs `./gradlew check assembleDebug` on every push to `main`, on `workflow_dispatch`, and
 when a green `portal-commons` run dispatches `portal-commons-green`. It checks out `portal-wake` and
 `portal-commons@main` side by side so that `includeBuild("../portal-commons")` resolves.
 

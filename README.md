@@ -85,6 +85,10 @@ repo, so see `app/src/main/assets/model-en-us/README.md` for the one-time downlo
 
 (If the model is missing the app still builds and runs — it just listens for nothing, no crash.)
 
+Verify a change with `./gradlew check` (unit tests, Android Lint and ktlint; `./gradlew formatKotlin` fixes
+style). `./setup.sh` turns on the repo's git hooks (`git config core.hooksPath .githooks`): `pre-commit` runs the
+ktlint CLI on staged Kotlin files (`brew install ktlint`) and `pre-push` runs `./gradlew check`.
+
 `./setup.sh` installs your local build on a connected Portal (grants the mic, frees the slot, starts the
 headless service); `./setup.sh --restore` re-enables the native "Hey Alexa" detector (com.millennium) and
 stops it. To publish a build for the one-click installer above, `scripts/cut-release.sh <tag>` uploads the
