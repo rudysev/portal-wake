@@ -41,23 +41,27 @@ internal class MicContentionDetector(private val seedMs: Long = DEFAULT_SEED_MS)
      * @return true when a foreign recorder appeared and portal-wake should stand down.
      */
     fun onConfigsChanged(sessionIds: List<Int>, nowMs: Long): Boolean {
-        if (phase == Phase.IDLE) return false
-
         if (phase == Phase.SEEDING && nowMs >= seedDeadlineMs) {
             phase = Phase.TRACKING
         }
 
-        if (sessionIds.size >= 2) return true // two recorders at once = contention (either phase)
+        return when {
+            phase == Phase.IDLE -> false
 
-        // Seed our own from the FIRST non-empty config; until we have, there's nothing to compare against.
-        if (phase == Phase.SEEDING && knownSessionIds.isEmpty()) {
-            if (sessionIds.isNotEmpty()) knownSessionIds = sessionIds.toSet()
-            return false
+            sessionIds.size >= 2 -> true
+
+            // two recorders at once = contention (either phase)
+
+            // Seed our own from the FIRST non-empty config; until we have, there's nothing to compare against.
+            phase == Phase.SEEDING && knownSessionIds.isEmpty() -> {
+                if (sessionIds.isNotEmpty()) knownSessionIds = sessionIds.toSet()
+                false
+            }
+
+            // Seeded (or invisible-wake TRACKING with nothing seeded): any id we don't know is a foreign grab —
+            // a 2nd recorder OR a single-mic replacement of ours ([wake] → [consumer]). Empty list → not foreign.
+            else -> sessionIds.any { it !in knownSessionIds }
         }
-
-        // Seeded (or invisible-wake TRACKING with nothing seeded): any id we don't know is a foreign grab —
-        // a 2nd recorder OR a single-mic replacement of ours ([wake] → [consumer]). Empty list → not foreign.
-        return sessionIds.any { it !in knownSessionIds }
     }
 
     companion object {

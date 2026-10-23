@@ -64,23 +64,24 @@ internal class HandoffRecovery {
      * once per release — when the consumer that held the mic has stopped — and [Reclaim.NONE] otherwise
      * (including while a [Reclaim.CONFIRM] is outstanding).
      */
-    fun onForeignRecording(recording: Boolean): Reclaim {
-        when (state) {
-            State.IDLE, State.CONFIRMING -> return Reclaim.NONE
+    fun onForeignRecording(recording: Boolean): Reclaim = when (state) {
+        State.IDLE, State.CONFIRMING -> Reclaim.NONE
 
-            State.WAITING_FOR_CONSUMER -> if (recording) state = State.BORROWED
-
-            // consumer grabbed it
-            State.BORROWED -> if (!recording) {
-                if (fromDetection) {
-                    state = State.CONFIRMING
-                    return Reclaim.CONFIRM
-                }
-                state = State.IDLE
-                return Reclaim.NOW
-            } // consumer released it
+        State.WAITING_FOR_CONSUMER -> {
+            if (recording) state = State.BORROWED // consumer grabbed it
+            Reclaim.NONE
         }
-        return Reclaim.NONE
+
+        State.BORROWED -> if (recording) Reclaim.NONE else onConsumerReleased()
+    }
+
+    /** The consumer released the mic: reclaim now after a wake handoff, or confirm first after a detection. */
+    private fun onConsumerReleased(): Reclaim = if (fromDetection) {
+        state = State.CONFIRMING
+        Reclaim.CONFIRM
+    } else {
+        state = State.IDLE
+        Reclaim.NOW
     }
 
     /** The [Reclaim.CONFIRM] re-check found a recorder still present — back to borrowed, await the real release. */

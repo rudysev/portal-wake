@@ -35,35 +35,39 @@ object WakeSpec {
             onProblem("missing required '${WakeContract.META_PHRASE}'")
             return null
         }
-        val minConf: Double
-        if (minConfidence.isNullOrBlank()) {
-            minConf = defaultMinConf
-        } else {
-            val n = minConfidence.trim().toDoubleOrNull()
-            // `in` a floating-point range also excludes NaN (in no range) and Infinity, not just ordinary
-            // out-of-bounds values, so a degenerate confidence can't slip through.
-            if (n != null && n in WakeContract.MIN_CONFIDENCE..WakeContract.MAX_CONFIDENCE) {
-                minConf = n
-            } else {
-                onProblem(
-                    "'${WakeContract.META_MIN_CONFIDENCE}' is not a number in " +
-                        "${WakeContract.MIN_CONFIDENCE}..${WakeContract.MAX_CONFIDENCE}: " +
-                        "\"$minConfidence\" — using default $defaultMinConf",
-                )
-                minConf = defaultMinConf
-            }
-        }
+        val minConf = minConfOrDefault(minConfidence, defaultMinConf, onProblem)
         // phrase is non-blank (guarded above), so fromPhrase always yields a usable word.
-        val word = WakeWord.fromPhrase(phrase, id, minConf) ?: return null
+        val word = WakeWord.fromPhrase(phrase, id, minConf)
         // A provided id that isn't the derived keyword is usually a typo (e.g. phrase="hey vega",
         // id="jarvis"). It still builds (an id may legitimately differ), but flag it — the id is what's
         // reported on a match and what overrides a built-in default.
-        if (!id.isNullOrBlank() && word.id != word.keyword) {
+        if (word != null && !id.isNullOrBlank() && word.id != word.keyword) {
             onProblem(
                 "'${WakeContract.META_ID}' \"${word.id}\" is not the keyword \"${word.keyword}\" derived from " +
                     "'${WakeContract.META_PHRASE}' — is that intended?",
             )
         }
         return word
+    }
+
+    /** The declared [minConfidence], or [defaultMinConf] when it is absent, or reported via [onProblem] when invalid. */
+    private fun minConfOrDefault(minConfidence: String?, defaultMinConf: Double, onProblem: (reason: String) -> Unit): Double {
+        val n = minConfidence?.trim()?.toDoubleOrNull()
+        return when {
+            minConfidence.isNullOrBlank() -> defaultMinConf
+
+            // `in` a floating-point range also excludes NaN (in no range) and Infinity, not just ordinary
+            // out-of-bounds values, so a degenerate confidence can't slip through.
+            n != null && n in WakeContract.MIN_CONFIDENCE..WakeContract.MAX_CONFIDENCE -> n
+
+            else -> {
+                onProblem(
+                    "'${WakeContract.META_MIN_CONFIDENCE}' is not a number in " +
+                        "${WakeContract.MIN_CONFIDENCE}..${WakeContract.MAX_CONFIDENCE}: " +
+                        "\"$minConfidence\" — using default $defaultMinConf",
+                )
+                defaultMinConf
+            }
+        }
     }
 }
