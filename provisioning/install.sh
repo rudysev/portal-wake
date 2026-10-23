@@ -26,7 +26,6 @@ die()  { printf "%sERROR:%s %s\n" "$R" "$N" "$1" >&2; exit 1; }
 
 # ----- load config -----------------------------------------------------------
 [ -f config.env ] || die "config.env not found next to this script."
-# shellcheck disable=SC1091
 set -a; . ./config.env; set +a
 
 # Local-install support (--local): the repo's standard debug build output, used when

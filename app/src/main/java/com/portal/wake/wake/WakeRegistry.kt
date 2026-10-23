@@ -66,6 +66,8 @@ object WakeRegistry {
     private fun queryHandlers(pm: PackageManager): List<WakeTarget> = runCatching {
         val intent = Intent(WakeContract.ACTION_WAKE)
 
+        // DEPRECATION: the ResolveInfoFlags overload is API 33+ and minSdk is 28. QueryPermissionsNeeded: the
+        // manifest's <queries> declares ACTION_WAKE, and targetSdk 29 predates package-visibility filtering anyway.
         @Suppress("DEPRECATION", "QueryPermissionsNeeded")
         val resolved = pm.queryBroadcastReceivers(intent, PackageManager.GET_META_DATA)
         resolved
@@ -102,6 +104,8 @@ object WakeRegistry {
      * like `0.55` is stored as a Float, so `getString` would return null — `get()?.toString()` keeps it, and
      * also lets a typo'd value reach [WakeSpec]'s "not a number" diagnostic instead of looking absent).
      */
+    // DEPRECATION: the untyped Bundle.get() is the point (the value's type depends on how Android parsed it), and
+    // the typed replacement getters can't read "whatever type it is".
     @Suppress("DEPRECATION")
     private fun Bundle.text(key: String): String? = get(key)?.toString()
 
@@ -164,11 +168,9 @@ object WakeRegistry {
         }
 
     private fun isInstalled(pm: PackageManager, pkg: String): Boolean = runCatching {
+        // DEPRECATION: the PackageInfoFlags overload is API 33+ and minSdk is 28.
         @Suppress("DEPRECATION")
-        pm.getPackageInfo(
-            pkg,
-            0,
-        )
+        pm.getPackageInfo(pkg, 0)
         true
     }.getOrDefault(false)
 }
