@@ -1,15 +1,15 @@
 package com.portal.wake.service
 
 import com.portal.commons.DebugLog
-import com.portal.wake.wake.CaptureGate
 import com.portal.wake.wake.HandoffRecovery
 import com.portal.wake.wake.MicContentionDetector
 
 /**
- * Owns the **mic-arbitration decision flow** that used to live inline in [WakeService]: it wires the three
- * pure coordinators ([CaptureGate], [HandoffRecovery], [MicContentionDetector]) to two injected seams — a
- * [Scheduler] (the controlling thread's delayed posts) and an [AudioGate] (the audio signals it reads) — and drives capture start/pause through the [CaptureController] seam. [WakeService]
- * keeps the engine lifecycle, the match→consumer routing, and the thin Android adapters; this class is the
+ * Owns the **mic-arbitration decision flow** that used to live inline in [WakeService]: it holds the two
+ * capture pause reasons (call, handoff) and wires the pure coordinators ([HandoffRecovery],
+ * [MicContentionDetector]) to two injected seams — a [Scheduler] (the controlling thread's delayed posts) and
+ * an [AudioGate] (the audio signals it reads) — and drives capture start/pause through the [CaptureController]
+ * seam. [WakeService] keeps the engine lifecycle, the match→consumer routing, and the thin Android adapters; this class is the
  * "should we be holding the mic right now" state machine.
  *
  * **No Android framework types.** Everything Android (the `AudioManager` reads, the
@@ -23,8 +23,8 @@ import com.portal.wake.wake.MicContentionDetector
  * on it — so the coordinators are touched single-threaded. The engine's capture thread never calls in here.
  *
  * The single reconcile rule ([reconcile]) is the only place capture is started or paused, so the two pause
- * reasons (call + handoff) can't fight: a call arriving mid-handoff just keeps [CaptureGate.shouldCapture]
- * false until both clear.
+ * reasons (call + handoff) can't fight: they are tracked independently, so a call arriving mid-handoff just
+ * keeps capture paused until both clear.
  */
 internal class MicArbiter(
     private val audio: AudioGate,
@@ -69,7 +69,20 @@ internal class MicArbiter(
 
     private val recovery = HandoffRecovery()
     private val contention = MicContentionDetector()
-    private val gate = CaptureGate()
+
+    // The two independent capture pause reasons; capture runs only when neither holds (see [shouldCapture]).
+    private var pausedForCall = false
+    private var pausedForHandoff = false
+
+    private val shouldCapture: Boolean get() = !pausedForCall && !pausedForHandoff
+
+    /** Status label for the per-reason transition logs; **call takes precedence** when both reasons hold. */
+    private val status: String
+        get() = when {
+            pausedForCall -> "paused for call"
+            pausedForHandoff -> "paused for handoff"
+            else -> "listening"
+        }
 
     // current stand-down came from foreign-mic detection → debounce the reclaim
     private var yieldedByDetection = false
@@ -98,8 +111,7 @@ internal class MicArbiter(
      */
     private val callPoll = object : Runnable {
         override fun run() {
-            val inCall = audio.inCall
-            if (gate.onCall(inCall)) DebugLog.log("gate: call=$inCall → ${gate.status}")
+            setPausedForCall(audio.inCall)
             reconcile() // also retries a refused/zombie start on the next tick
             scheduler.postDelayed(this, STANDDOWN_POLL_MS)
         }
@@ -107,21 +119,23 @@ internal class MicArbiter(
 
     /** Seed call state, start the poll, and do the first reconcile. Call once the engine is built. */
     fun start() {
-        gate.onCall(audio.inCall) // seed call state before the first reconcile
+        pausedForCall = audio.inCall // seed call state before the first reconcile
         scheduler.postDelayed(callPoll, STANDDOWN_POLL_MS)
         reconcile()
     }
 
     /**
      * Fully reset, so the arbiter is left inert and safe to reuse (e.g. in tests). Cancels its own queued
-     * posts ([callPoll]/[reclaimConfirm]) and clears every coordinator + the debounce flag. The Android
-     * recording-callback is unregistered by [WakeService] (which owns it); this is the pure half of teardown.
+     * posts ([callPoll]/[reclaimConfirm]) and clears both pause reasons, every coordinator + the debounce flag.
+     * The Android recording-callback is unregistered by [WakeService] (which owns it); this is the pure half of
+     * teardown.
      */
     fun detach() {
         scheduler.removeCallbacks(callPoll)
         scheduler.removeCallbacks(reclaimConfirm)
         contention.onCaptureStopped()
-        gate.reset()
+        pausedForCall = false
+        pausedForHandoff = false
         recovery.reset()
         yieldedByDetection = false
     }
@@ -163,7 +177,7 @@ internal class MicArbiter(
     }
 
     /**
-     * The single place capture is started or paused. Brings capture in line with [CaptureGate] via the
+     * The single place capture is started or paused. Brings capture in line with the pause reasons via the
      * [CaptureController]: start it when nothing should pause us (only marking capture started on the actual
      * start result, so a refused/zombie start is retried rather than assumed), pause it otherwise.
      *
@@ -172,11 +186,10 @@ internal class MicArbiter(
      * it; if a call has begun, the call reason is set and capture stays paused.
      */
     fun reconcile() {
-        val want = gate.shouldCapture
+        val want = shouldCapture
         if (want && !controller.isCapturing) {
             if (audio.inCall) {
-                gate.onCall(true)
-                DebugLog.log("gate: call=true (live check before start) → ${gate.status}")
+                setPausedForCall(true, "live check before start")
                 return
             }
             if (controller.startCapture()) contention.onCaptureStarted(now())
@@ -196,19 +209,33 @@ internal class MicArbiter(
         contention.onCaptureStopped()
         yieldedByDetection = consumerAlreadyRecording
         DebugLog.log("WAKE → handing off ($reason)")
-        if (gate.onHandoff()) DebugLog.log("gate: handoff=true → ${gate.status}")
+        setPausedForHandoff(true)
         // Wake handoff (false): consumer starts AFTER we release → WAITING, and reclaim is immediate.
         // Foreign-mic detection (true): consumer already holds the mic → BORROWED directly, reclaim debounced.
         recovery.onHandoff(consumerAlreadyRecording)
         reconcile() // pauses capture, freeing the slot
     }
 
-    /** Take the mic back: clear recovery + the handoff gate reason and reconcile (starts unless a call holds). */
+    /** Take the mic back: clear recovery + the handoff pause reason and reconcile (starts unless a call holds). */
     private fun reclaimNow() {
         yieldedByDetection = false
         recovery.reset()
-        if (gate.onHandoffEnded()) DebugLog.log("gate: handoff=false → ${gate.status}")
+        setPausedForHandoff(false)
         reconcile()
+    }
+
+    /** Set/clear the call pause reason, logging the transition (with what triggered it, if not the poll). */
+    private fun setPausedForCall(inCall: Boolean, trigger: String? = null) {
+        if (pausedForCall == inCall) return
+        pausedForCall = inCall
+        DebugLog.log("gate: call=$inCall${trigger?.let { " ($it)" } ?: ""} → $status")
+    }
+
+    /** Set/clear the handoff pause reason, logging the transition. */
+    private fun setPausedForHandoff(handoff: Boolean) {
+        if (pausedForHandoff == handoff) return
+        pausedForHandoff = handoff
+        DebugLog.log("gate: handoff=$handoff → $status")
     }
 
     companion object {
