@@ -93,6 +93,21 @@ class MicArbiterTest {
     }
 
     @Test
+    fun callWhileCapturing_pausesThenResumesWhenCallEnds() {
+        arbiter.start()
+
+        audio.inCall = true
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // poll sees the call → stand down
+        assertFalse(ctl.isCapturing)
+        assertEquals(1, ctl.pauseCount)
+
+        audio.inCall = false
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // call over → capture resumes
+        assertTrue(ctl.isCapturing)
+        assertEquals(2, ctl.startCount)
+    }
+
+    @Test
     fun wakeHandoff_reclaimsImmediatelyWhenConsumerReleases() {
         arbiter.start()
         arbiter.standDown("wake") // consumerAlreadyRecording = false
@@ -168,6 +183,50 @@ class MicArbiterTest {
     }
 
     @Test
+    fun callEndingMidHandoff_keepsCapturePausedUntilConsumerReleases() {
+        arbiter.start()
+        arbiter.standDown("wake") // paused for handoff
+        arbiter.onRecordingConfigs(listOf(7)) // consumer records
+
+        audio.inCall = true
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // call begins mid-handoff
+        audio.inCall = false
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // call ends — but the consumer still holds the mic
+        assertFalse(ctl.isCapturing)
+        assertEquals(1, ctl.startCount)
+
+        arbiter.onRecordingConfigs(emptyList()) // consumer releases → reclaim
+        assertTrue(ctl.isCapturing)
+    }
+
+    @Test
+    fun handoffDuringACall_resumesOnlyAfterBothClear() {
+        audio.inCall = true
+        arbiter.start() // paused for call
+        arbiter.standDown("wake") // a handoff while the call holds
+
+        arbiter.onRecordingConfigs(listOf(7)) // consumer records
+        arbiter.onRecordingConfigs(emptyList()) // consumer releases → handoff over, call still on
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS)
+        assertFalse(ctl.isCapturing)
+        assertEquals(0, ctl.startCount)
+
+        audio.inCall = false
+        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // call over → capture
+        assertTrue(ctl.isCapturing)
+    }
+
+    @Test
+    fun reconcile_isIdempotentWhenNothingChanged() {
+        arbiter.start()
+        arbiter.reconcile()
+        arbiter.reconcile()
+
+        assertEquals(1, ctl.startCount)
+        assertEquals(0, ctl.pauseCount)
+    }
+
+    @Test
     fun reclaim_staysPausedWhenACallBeganSinceTheLastPoll() {
         arbiter.start()
         arbiter.standDown("wake")
@@ -228,7 +287,7 @@ class MicArbiterTest {
         assertEquals(0, sch.countWithDelay(MicArbiter.STANDDOWN_POLL_MS))
         assertEquals(0, sch.countWithDelay(MicArbiter.RECLAIM_DEBOUNCE_MS))
 
-        // Reused arbiter must start cleanly (gate/recovery cleared), not stuck paused-for-handoff.
+        // Reused arbiter must start cleanly (pause reasons/recovery cleared), not stuck paused-for-handoff.
         arbiter.start()
         assertTrue(ctl.isCapturing)
     }
