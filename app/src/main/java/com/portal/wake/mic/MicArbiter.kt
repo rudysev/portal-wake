@@ -264,7 +264,7 @@ internal class MicArbiter(
     private fun setPausedForCall(inCall: Boolean, trigger: String? = null) {
         if (pausedForCall == inCall) return
         pausedForCall = inCall
-        DebugLog.log("gate: call=$inCall${trigger?.let { " ($it)" } ?: ""} → $status")
+        DebugLog.log("gate: call=$inCall${trigger?.let { " ($it)" }.orEmpty()} → $status")
     }
 
     /** Set/clear the handoff pause reason, logging the transition. */

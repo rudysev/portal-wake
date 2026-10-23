@@ -63,7 +63,7 @@ class WakeService :
      */
     private val recordingCallback = object : AudioManager.AudioRecordingCallback() {
         override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>?) {
-            val list = configs ?: emptyList()
+            val list = configs.orEmpty()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) logSilencing(list)
             arbiter.onRecordingConfigs(list.map { it.clientAudioSessionId })
         }
@@ -375,5 +375,5 @@ private class AudioManagerGate(private val audioManager: AudioManager) : MicArbi
     // Presence check only (the reclaim confirm asks "is anyone recording?", not who) — no list allocation,
     // and the clientAudioSessionId projection lives in exactly one place: the recordingCallback shell.
     override val hasActiveRecording: Boolean
-        get() = !audioManager.activeRecordingConfigurations.isNullOrEmpty()
+        get() = audioManager.activeRecordingConfigurations.isNotEmpty()
 }
