@@ -130,6 +130,14 @@ git submodule update --init --recursive   # from the portal-apps workspace: pull
 npx -y @meta-quest/hzdb adb shell "cat /sdcard/Android/data/com.portal.wake/files/debug.txt"
 ```
 
+## Android Lint
+
+`check` runs Android Lint on the debug and release variants with `warningsAsErrors` and `abortOnError`, so any
+warning fails it (and so pre-push and CI). There is no `lint-baseline.xml`: suppress inline only (`@SuppressLint`,
+`tools:ignore`, `//noinspection`), each with a reason comment. The dependency-freshness checks
+(`AndroidGradlePluginVersion`, `GradleDependency`, `NewerVersionAvailable`) are disabled, because they query the
+network and fail whenever upstream ships a release. Report: `app/build/reports/lint-results-debug.html`.
+
 ## Hooks
 
 `git config core.hooksPath .githooks` (done by `./setup.sh`). `pre-commit` runs the `ktlint` CLI on staged
