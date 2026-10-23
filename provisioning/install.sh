@@ -15,7 +15,7 @@
 set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SELF="$SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"   # absolute path to this script — survives the cd below (for --help)
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR" || exit 1
 
 # ----- pretty output ---------------------------------------------------------
 if [ -t 1 ]; then B=$'\033[1m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; D=$'\033[2m'; N=$'\033[0m'; else B=; G=; Y=; R=; D=; N=; fi
@@ -157,13 +157,16 @@ install_app() {
         ok "Downloaded $name"
       fi
     else
+      # APK_GLOB (config.env, apks/*.apk) must stay unquoted so it expands, and ls -t is the portable way to pick
+      # the newest APK in apks/. Only the first line of output is used, and APK file names have no newlines.
+      # shellcheck disable=SC2012,SC2086
       apk="$(ls -t $APK_GLOB 2>/dev/null | head -1)"
       [ -n "$apk" ] || die "No cached APK in apks/ and couldn't reach GitHub to download one. Connect to the internet, drop a portal-wake APK in apks/, or use --local."
       warn "Couldn't reach GitHub — installing the cached APK ($(basename "$apk")); it may not be the latest."
     fi
   fi
   step "Installing portal-wake ($(basename "$apk"))"
-  a install -r -d "$apk" >/dev/null 2>&1 && ok "Installed $PKG" || die "Install failed."
+  if a install -r -d "$apk" >/dev/null 2>&1; then ok "Installed $PKG"; else die "Install failed."; fi
 }
 
 grant_mic() {
@@ -178,9 +181,11 @@ free_mic_slot() {
   # disable it if present. Uninstall re-enables it. (We never touch the Alexa client.)
   if a shell pm list packages "$MILLENNIUM_PKG" 2>/dev/null | tr -d '\r' | grep -q "package:$MILLENNIUM_PKG"; then
     step "Freeing the microphone (disabling Meta's \"Hey Alexa\" detector)"
-    a shell pm disable-user --user 0 "$MILLENNIUM_PKG" >/dev/null 2>&1 \
-      && ok "Disabled $MILLENNIUM_PKG" \
-      || warn "Couldn't disable $MILLENNIUM_PKG — wake may be starved by the native \"Hey Alexa\" detector."
+    if a shell pm disable-user --user 0 "$MILLENNIUM_PKG" >/dev/null 2>&1; then
+      ok "Disabled $MILLENNIUM_PKG"
+    else
+      warn "Couldn't disable $MILLENNIUM_PKG — wake may be starved by the native \"Hey Alexa\" detector."
+    fi
   else
     ok "No competing \"Hey Alexa\" detector on this device"
   fi
@@ -230,11 +235,11 @@ do_uninstall() {
   # the default `pm list packages` on some Android builds, which would silently skip the re-enable.
   if a shell pm list packages -d "$MILLENNIUM_PKG" 2>/dev/null | tr -d '\r' | grep -q "package:$MILLENNIUM_PKG"; then
     step "Re-enabling Meta's \"Hey Alexa\" detector"
-    a shell pm enable "$MILLENNIUM_PKG" >/dev/null 2>&1 && ok "Re-enabled $MILLENNIUM_PKG" || warn "Couldn't re-enable $MILLENNIUM_PKG — re-enable it from the Portal's app settings."
+    if a shell pm enable "$MILLENNIUM_PKG" >/dev/null 2>&1; then ok "Re-enabled $MILLENNIUM_PKG"; else warn "Couldn't re-enable $MILLENNIUM_PKG — re-enable it from the Portal's app settings."; fi
   fi
   step "Stopping and removing portal-wake"
   a shell am force-stop "$PKG" >/dev/null 2>&1
-  a uninstall "$PKG" >/dev/null 2>&1 && ok "Uninstalled $PKG" || warn "portal-wake was not installed."
+  if a uninstall "$PKG" >/dev/null 2>&1; then ok "Uninstalled $PKG"; else warn "portal-wake was not installed."; fi
   printf "\n%s✓ Done. portal-wake removed; the stock \"Hey Alexa\" detector is back.%s\n" "$G$B" "$N"
 }
 
