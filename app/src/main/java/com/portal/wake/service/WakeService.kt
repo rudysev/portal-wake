@@ -193,7 +193,7 @@ class WakeService :
                 // single-threaded, so the capture thread only captures.
                 onWake = { event -> main.post { handoff.handOff(targets, event.wakeId) } },
                 // On main; the engine logs the cause and never delivers one after close().
-                onCaptureLost = { arbiter.onCaptureLost() },
+                onCaptureLost = arbiter::onCaptureLost,
                 beforeMicAcquire = { MicLiberator.freeMic(applicationContext) },
             ),
         )

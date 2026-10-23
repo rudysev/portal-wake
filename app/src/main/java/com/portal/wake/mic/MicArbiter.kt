@@ -1,6 +1,7 @@
 package com.portal.wake.mic
 
 import com.portal.commons.DebugLog
+import com.portal.commons.audio.CaptureLoss
 import com.portal.wake.mic.HandoffRecovery.Reclaim
 
 /**
@@ -46,7 +47,7 @@ internal class MicArbiter(
      */
     interface CaptureController {
         /**
-         * Request a capture start. The mic is acquired asynchronously; a busy mic or a device fault surfaces later
+         * Request a capture start. The mic is acquired asynchronously; a mic that can't be opened surfaces later
          * as a capture loss via [onCaptureLost].
          */
         fun startCapture()
@@ -211,15 +212,16 @@ internal class MicArbiter(
      *  - **another app is recording** → it holds the mic (e.g. busy at start-up): stand down by detection
      *    (BORROWED directly, debounced confirmed reclaim) and wait for it to release, rather than polling
      *    against it (which would run the mic liberator every tick);
-     *  - **nobody is recording** → a device fault: mark not capturing and let the poll's reconcile retry.
+     *  - **nobody is recording** → the mic is unavailable to us (not granted) or capture died (dropped) with no
+     *    one to wait for: let the poll's reconcile retry. The log names the [loss]'s cause and reason.
      */
-    fun onCaptureLost() {
+    fun onCaptureLost(loss: CaptureLoss) {
         setCapturing(false)
         if (audio.hasActiveRecording) {
             DebugLog.log("capture lost — another app is recording → waiting for it to release")
             standDown("capture lost to another recorder", consumerAlreadyRecording = true)
         } else {
-            DebugLog.log("capture lost (device fault) → retrying on the next poll")
+            DebugLog.log("capture lost (${loss.label()}) → retrying in $STANDDOWN_POLL_MS ms")
         }
     }
 
@@ -269,6 +271,12 @@ internal class MicArbiter(
         pausedForHandoff = handoff
         DebugLog.log("gate: handoff=$handoff → $status")
     }
+
+    /** "not granted: microphone unavailable": the loss's cause, as the glossary names it, and its reason. */
+    private fun CaptureLoss.label(): String = when (this) {
+        is CaptureLoss.NotGranted -> "not granted"
+        is CaptureLoss.Dropped -> "dropped"
+    } + ": " + reason
 
     companion object {
         // Re-check the in-call state (audio mode) this often (no mode-change event on API 28).
