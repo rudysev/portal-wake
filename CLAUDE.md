@@ -94,9 +94,9 @@ handoff) and the single `reconcile()` that starts/pauses capture, drives the eng
 helpers: `HandoffRecovery` = reclaim rule; `MicContentionDetector` = foreign-recording-session detector.
 The **wake-detection core** lives in `portal-commons` so `portal-assistant` can reuse it for its foreground
 detector (see the shared-code note below): `WakeMicEngine` = mic + capture over `PcmCaptureSession`, configured via
-`WakeMicConfig` + `WakeDetectors.vosk()`; `VoskWakeDetector` = Vosk recognition policy [pre-ready
-`PcmRingBuffer` + handoff cooldown + idle-reset]; `WakeRecognizer` = Vosk boundary [warm-up + ready-gate];
-`WakeMatcher` = accuracy gate [tested]; `WakeWord`. `WakeMicConfig.beforeMicAcquire` is the mic-slot hook —
+`WakeMicConfig` + `WakeDetectors.vosk()` = the Vosk detector, one `internal` module behind that factory
+[model load + grammar + warm-up + pre-ready buffer/replay + idle-reset + grammar hot-swap; honours the engine's
+handoff cooldown; tested through `WakeDetector`]; `WakeMatcher` = accuracy gate [tested]; `WakeWord`. `WakeMicConfig.beforeMicAcquire` is the mic-slot hook —
 portal-wake passes `MicLiberator.freeMic`, the assistant passes none.
 `wake/` = the extensibility layer (WakeContract = the published plugin contract [tested], WakeSpec
 = builds a WakeWord from a plugin's named wake meta-data [tested], WakeRegistry = discovery, WakeTarget =
@@ -107,7 +107,7 @@ intent (the **alexa** route). **Shared code lives in `portal-commons` (the sibli
 + device lifecycle, `PcmCaptureFormat`, `DebugLog` `files/debug.txt` log, **plus the pure wake-decision
 `WakeMatcher` [tested] + `WakeWord`**), plus the Android-library `com.portal:commons-android`
 (`com.portal.commons.audio.AudioRecordPcmDevice` the shared mic shell, **plus the Vosk detection core
-`WakeRecognizer` + `WakeMicEngine` / `WakeMicConfig` / `WakeDetectors` / `VoskWakeDetector` [tested]** —
+`WakeMicEngine` / `WakeMicConfig` / `WakeDetector` / `WakeDetectors.vosk()` [tested]** —
 `commons-android` carries the `vosk-android` dep) — both pulled in via Gradle composite build, and **both
 consumed by `portal-wake` AND `portal-assistant`** (so an edit to the shared wake classes changes both apps'
 detectors). The wake plugin contract

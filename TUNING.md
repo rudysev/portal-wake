@@ -15,7 +15,7 @@ These follow Vosk's own top recommendations and need no extra work:
    vocabulary matching the target keywords* is what makes short-phrase spotting reliable. We build a
    grammar from exactly the wake phrases + their keywords + each word's declared lead (e.g. `"hey"`) + an `"[unk]"` escape token, so the
    decoder either hears a wake phrase or dumps everything else into `[unk]` instead of forcing a
-   look-alike onto a wake word. → `WakeRecognizer.buildGrammar`.
+   look-alike onto a wake word. → `buildGrammar` in portal-commons' Vosk detector (the internal `VoskWakeDetector`).
 2. **A dynamic-graph (`lgraph`) model.** Runtime grammars require "a model with a dynamic graph"
    (per the adaptation page). `vosk-model-en-us-0.22-lgraph` is that model — its `Gr.fst` supports the
    `Recognizer(model, sampleRate, grammar)` constructor we use. Don't swap to a non-lgraph model
@@ -76,9 +76,11 @@ the clean-phrase and cross-keyword gates — not the keyword floor — do the wo
 > **Not a tuning dial: the first phrase after idle.** A "first 'hey jarvis' misses, second one works"
 > symptom is a startup / capture-timing issue, **not** an accuracy/threshold one — don't chase it with the
 > dials below. It is handled in the capture/recognition layer: frames captured while the Vosk model is
-> still loading are buffered (`PcmRingBuffer`) and replayed once it's ready, and the Kaldi decoding-graph
-> warm-up runs after every `WakeRecognizer.reset()`. If a first-utterance miss shows up, look there (and at
-> `flushing N pre-ready frame(s)` in `debug.txt`), not at `WakeMatcher`.
+> still loading are buffered (the detector's pre-ready buffer) and replayed once it's ready, and the Kaldi
+> decoding-graph warm-up (`warmUp`) runs on every fresh decoder and after every reset. All of this lives in
+> portal-commons' Vosk detector (`VoskWakeDetector`, behind `WakeDetectors.vosk()`). If a first-utterance
+> miss shows up, look there (and at `flushing N pre-ready frame(s)` in `debug.txt` — that log line is
+> unchanged), not at `WakeMatcher`.
 
 ## The dials, and how to turn them (no model work)
 
