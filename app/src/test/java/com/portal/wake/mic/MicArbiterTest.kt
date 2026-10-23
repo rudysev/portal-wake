@@ -315,7 +315,7 @@ class MicArbiterTest {
     }
 
     @Test
-    fun lostCaptureToAnotherRecorder_waitsBorrowedThenReclaimsAfterConfirmedRelease() {
+    fun captureLossToAnotherRecorder_waitsBorrowedThenReclaimsAfterConfirmedRelease() {
         arbiter.start()
         audio.hasActiveRecording = true // another app holds the mic (e.g. busy at start-up)
         arbiter.onCaptureLost()
@@ -339,7 +339,7 @@ class MicArbiterTest {
     }
 
     @Test
-    fun lostCaptureWithNoOtherRecorder_isRetriedOnTheNextPoll() {
+    fun captureLossWithNoOtherRecorder_isRetriedOnTheNextPoll() {
         arbiter.start()
         arbiter.onCaptureLost() // a device fault: nobody else is recording
         assertFalse(arbiter.isCapturing)
@@ -352,7 +352,7 @@ class MicArbiterTest {
     }
 
     @Test
-    fun lostCapture_resetsContentionTracking_andTheNextStartReSeeds() {
+    fun captureLoss_resetsContentionTracking_andTheNextStartReSeeds() {
         arbiter.start()
         arbiter.onRecordingConfigs(listOf(1)) // seed our own session id
         arbiter.onCaptureLost() // device fault → contention stops tracking
@@ -389,7 +389,7 @@ class MicArbiterTest {
     }
 
     @Test
-    fun lostCapture_isAuthoritative_soTheEngineIsNotPausedAgain() {
+    fun captureLoss_isAuthoritative_soTheEngineIsNotPausedAgain() {
         arbiter.start()
         audio.hasActiveRecording = true
         arbiter.onCaptureLost() // the engine is already idle after a loss
