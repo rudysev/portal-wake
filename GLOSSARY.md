@@ -62,7 +62,7 @@ before reclaiming.
 _Avoid_: resume, timeout
 
 **Capture loss**:
-The wake mic engine reporting that capture is not running while Portal-Wake wants it running (defined in
-portal-commons' `GLOSSARY.md`). If another app is recording, it is a detection stand-down; otherwise capture is
+The wake mic engine reporting that capture is not running, or is running but delivers only digital silence, while
+Portal-Wake wants it running (defined in portal-commons' `GLOSSARY.md`). If another app is recording, it is a detection stand-down; otherwise capture is
 retried on the next poll, backing off (doubling, up to a cap) while losses keep coming.
 _Avoid_: lost capture, capture error, engine stopped, mic failure
