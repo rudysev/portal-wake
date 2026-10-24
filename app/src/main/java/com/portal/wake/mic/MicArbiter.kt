@@ -1,6 +1,7 @@
 package com.portal.wake.mic
 
 import com.portal.commons.DebugLog
+import com.portal.commons.PcmCaptureSession
 import com.portal.commons.audio.CaptureLoss
 import com.portal.wake.mic.HandoffRecovery.Reclaim
 
@@ -84,10 +85,12 @@ internal class MicArbiter(
     private val shouldCapture: Boolean get() = !pausedForCall && !pausedForHandoff
 
     // The retry backoff after capture losses with nobody else recording (see [onCaptureLost]): how many losses in
-    // a row, the delay before the latest retry, and the polls left until it ([reconcile] holds the start till 0).
+    // a row, the delay before the latest retry, the polls left until it ([reconcile] holds the start till 0), and
+    // how long the latest retry has been capturing without a loss.
     private var failedStarts = 0
     private var retryDelayMs = 0L
     private var pollsUntilRetry = 0L
+    private var retryCapturedMs = 0L
 
     /** Whether we hold (or have requested) the mic. Changed only via [setCapturing]. */
     var isCapturing = false
@@ -125,7 +128,8 @@ internal class MicArbiter(
      */
     private val callPoll = object : Runnable {
         override fun run() {
-            if (isCapturing && failedStarts > 0) { // a retry ran a whole poll with no loss: capture is back
+            if (isCapturing && failedStarts > 0) retryCapturedMs += STANDDOWN_POLL_MS
+            if (retryCapturedMs > RETRY_PROVEN_MS) { // a retry outlasted a silenced loss's window: capture is back
                 DebugLog.log("capture resumed after $failedStarts failed starts")
                 resetRetryBackoff()
             }
@@ -226,11 +230,13 @@ internal class MicArbiter(
      *  - **another app is recording** → it holds the mic (e.g. busy at start-up): stand down by detection
      *    (BORROWED directly, debounced confirmed reclaim) and wait for it to release, rather than polling
      *    against it (which would run the mic liberator every tick);
-     *  - **nobody is recording** → the mic is unavailable to us (not granted) or capture died (dropped) with no
-     *    one to wait for: let the poll's reconcile retry. The log names the [loss]'s cause and reason. The first
-     *    loss retries on the next poll; each further loss in a row doubles the delay, up to
-     *    [RETRY_BACKOFF_CAP_MS]. A retry that runs a whole poll without a loss ends the streak, as do a
-     *    stand-down and a call.
+     *  - **nobody is recording** → the mic is unavailable to us (not granted), capture died (dropped) or it
+     *    delivers only digital silence (silenced), with no one to wait for: let the poll's reconcile retry. The
+     *    log names the [loss]'s cause and reason. The first loss retries on the next poll; each further loss in a
+     *    row doubles the delay, up to [RETRY_BACKOFF_CAP_MS]. A retry that captures for longer than
+     *    [RETRY_PROVEN_MS] without a loss ends the streak, as do a stand-down and a call. A silenced retry captures
+     *    its whole silence window before it is lost, so a shorter proof would end the streak every time and reopen
+     *    the mic forever without backing off.
      */
     fun onCaptureLost(loss: CaptureLoss) {
         setCapturing(false)
@@ -239,6 +245,7 @@ internal class MicArbiter(
             standDown("capture lost to another recorder", consumerAlreadyRecording = true)
         } else {
             failedStarts++
+            retryCapturedMs = 0L
             retryDelayMs = if (failedStarts == 1) STANDDOWN_POLL_MS else minOf(retryDelayMs * 2, RETRY_BACKOFF_CAP_MS)
             pollsUntilRetry = retryDelayMs / STANDDOWN_POLL_MS
             DebugLog.log("capture lost (${loss.label()}) → retrying in $retryDelayMs ms")
@@ -267,6 +274,7 @@ internal class MicArbiter(
         failedStarts = 0
         retryDelayMs = 0L
         pollsUntilRetry = 0L
+        retryCapturedMs = 0L
     }
 
     /** Take the mic back: clear recovery + the handoff pause reason and reconcile (starts unless a call holds). */
@@ -313,6 +321,10 @@ internal class MicArbiter(
         // Consecutive capture losses with nobody else recording retry after STANDDOWN_POLL_MS, then double the
         // delay up to this cap, so an unavailable mic isn't hammered (and the log isn't flooded) every poll.
         internal const val RETRY_BACKOFF_CAP_MS = 4_000L
+
+        // A retry has to capture this long without a loss to end the backoff streak: the engine's silence window,
+        // plus a second for the open and the posted delivery that land a silenced loss just after the window.
+        internal const val RETRY_PROVEN_MS = PcmCaptureSession.DEFAULT_SILENCE_WINDOW_MS + 1_000L
     }
 }
 
@@ -320,4 +332,5 @@ internal class MicArbiter(
 private fun CaptureLoss.label(): String = when (this) {
     is CaptureLoss.NotGranted -> "not granted"
     is CaptureLoss.Dropped -> "dropped"
+    is CaptureLoss.Silenced -> "silenced"
 } + ": " + reason

@@ -60,6 +60,7 @@ class MicArbiterTest {
     private var clock = 0L
     private val arbiter = MicArbiter(audio, sch, ctl) { clock }
     private val notGranted = CaptureLoss.NotGranted("microphone unavailable")
+    private val silenced = CaptureLoss.Silenced("digital silence for 2000ms")
 
     @Test
     fun start_beginsCaptureWhenIdle_andArmsThePoll() {
@@ -428,14 +429,42 @@ class MicArbiterTest {
         assertEquals(listOf(1, 2, 4, 8, 16, 16, 16), polls)
     }
 
+    /** A retry that captures the whole 2 s silence window (8 polls) and is then lost as silenced. */
+    private fun silencedRetryThenPollsUntilNext(): Int {
+        repeat(8) { sch.fire(MicArbiter.STANDDOWN_POLL_MS) }
+        arbiter.onCaptureLost(silenced)
+        return pollsUntilNextStart()
+    }
+
     @Test
-    fun aStartThatSurvivesAPoll_resetsTheBackoff() {
+    fun silencedRetries_keepBackingOff_thoughEachRunsTheWholeSilenceWindow() {
+        arbiter.start()
+        arbiter.onCaptureLost(silenced)
+        pollsUntilNextStart()
+
+        val polls = List(5) { silencedRetryThenPollsUntilNext() }
+
+        assertEquals(listOf(2, 4, 8, 16, 16), polls)
+    }
+
+    @Test
+    fun aStartThatCapturesForMoreThanThreeSeconds_resetsTheBackoff() {
         arbiter.start()
         repeat(3) { lossThenPollsUntilRetry() } // backed off to 1 s
 
-        sch.fire(MicArbiter.STANDDOWN_POLL_MS) // the retry outlives a poll with no loss → capture resumed
+        repeat(13) { sch.fire(MicArbiter.STANDDOWN_POLL_MS) } // 3.25 s with no loss → capture resumed
 
         assertEquals(1, lossThenPollsUntilRetry()) // a later loss retries on the next poll again
+    }
+
+    @Test
+    fun aStartLostAfterExactlyThreeSeconds_keepsBackingOff() {
+        arbiter.start()
+        repeat(3) { lossThenPollsUntilRetry() } // backed off to 1 s
+
+        repeat(12) { sch.fire(MicArbiter.STANDDOWN_POLL_MS) } // 3 s: not yet past the proof
+
+        assertEquals(8, lossThenPollsUntilRetry()) // the next retry waits 2 s
     }
 
     @Test
