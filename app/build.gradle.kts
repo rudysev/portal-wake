@@ -60,7 +60,7 @@ dependencies {
   // NotificationCompat/ContextCompat and @RequiresApi; the app uses none of core-ktx's Kotlin extensions.
   implementation(libs.androidx.core)
   implementation(libs.androidx.annotation)
-  // Shared utilities (DebugLog/PcmCaptureSession/PcmCaptureFormat); composite-build substituted from ./commons.
+  // Shared utilities (DebugLog/PcmCapture/PcmCaptureFormat); composite-build substituted from ./commons.
   implementation(libs.portal.commons)
   // Shared Android shells (AudioRecordPcmDevice); composite-build substituted from ./commons-android.
   implementation(libs.portal.commons.android)
