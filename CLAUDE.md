@@ -51,7 +51,7 @@ Routes: **jarvis** → plugin `portal-assistant` (`WakeContract`); **alexa** →
   contract, mirrored by plugins), `WakeSpec`, `WakeRegistry`, `WakeTarget`.
 - `system/` — `MicLiberator` (frees mic slot), `Falcon` (alexa route).
 - **portal-commons** (edits change both apps):
-  - `com.portal:commons` (pure JVM): `PcmCaptureSession`/`PcmDevice`, `PcmCaptureFormat`, `DebugLog`, `WakeMatcher`, `WakeWord`.
+  - `com.portal:commons` (pure JVM): `PcmCapture`/`PcmDevice`, `PcmCaptureFormat`, `DebugLog`, `WakeMatcher`, `WakeWord`.
   - `com.portal:commons-android`: `AudioRecordPcmDevice`, `WakeMicEngine`, `WakeMicConfig`, `WakeDetector`,
     `WakeDetectors.vosk()` (carries `vosk-android`). `WakeMicConfig.beforeMicAcquire` = mic-slot hook
     (portal-wake passes `MicLiberator.freeMic`).
