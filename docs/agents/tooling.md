@@ -14,8 +14,13 @@ Read before changing lint/detekt/ktlint config, git hooks, CI workflows, or depe
 - Config = defaults + `config/detekt/detekt.yml`: coroutine opt-ins (`GlobalCoroutineUsage`, `InjectDispatcher`,
   `SleepInsteadOfDelay`, `SuspendFunSwallowedCancellation`), TODO/FIXME/STOPSHIP comments forbidden, `@Composable`
   exempt from `FunctionNaming`.
-- `detekt.yml` is **identical in portal-commons, portal-wake, portal-assistant** — change all three together.
+- `detekt.yml` and the detekt block of `gradle.properties` are **identical in portal-commons, portal-wake,
+  portal-assistant** — change all three together.
 - Reports: `app/build/reports/detekt/`.
+- Runs in its own process (`detekt.use.worker.api=true` in `gradle.properties`): in the Gradle daemon its type
+  resolution kept reading the rebuilt classes jar as it was on the first run, so `detektDebugUnitTest` analysed tests
+  against stale main classes and only warned "N compiler errors found during analysis" while `check` passed. That
+  warning on a clean tree means type resolution is broken again: rerun with `detekt { debug = true }` to see why.
 
 ## Hooks (`.githooks/`)
 - `pre-commit`: `ktlint` + `detekt-cli` (no type resolution, ~1 s) on staged `.kt`/`.kts`; `shellcheck` on staged
