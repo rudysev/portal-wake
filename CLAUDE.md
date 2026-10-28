@@ -44,14 +44,16 @@ Routes: **jarvis** → plugin `portal-assistant` (`WakeContract`); **alexa** →
 ## Layout
 - `service/` — Android lifecycle + adapters: `WakeService` (engine lifecycle, `AudioManagerGate`, `HandlerScheduler`,
   recording callback, `logSilencing`), `WakeHandoff` (match→consumer routing), `WakeNotification`, `BootReceiver`.
-- `mic/` — Android-free, unit-tested. `MicArbiter` = state machine: two pause reasons (call, handoff), single
-  `reconcile()`, drives engine via `CaptureController`, reads Android via `Scheduler`/`AudioGate`. Internal:
-  `HandoffRecovery` (reclaim rule), `MicContentionDetector`.
+- `mic/` — runs on the JVM, unit-tested: calls Android only through `Scheduler`/`AudioGate` and the engine only
+  through `CaptureController`. Its timing reads the engine's own `const`s (e.g. `WakeMicEngine.SILENCE_WINDOW_MS`,
+  inlined at compile time), so it tracks the values the engine uses. `MicArbiter` = state machine: two pause reasons
+  (call, handoff), single `reconcile()`. Internal: `HandoffRecovery` (reclaim rule), `MicContentionDetector`.
 - `wake/` — this app's own (not shared): `WakeContract` (plugin contract; meta-data key strings are the wire
   contract, mirrored by plugins), `WakeSpec`, `WakeRegistry`, `WakeTarget`.
 - `system/` — `MicLiberator` (frees mic slot), `Falcon` (alexa route).
 - **portal-commons** (edits change both apps):
-  - `com.portal:commons` (pure JVM): `PcmCapture`/`PcmDevice`, `PcmCaptureFormat`, `DebugLog`, `WakeMatcher`, `WakeWord`.
+  - `com.portal:commons` (pure JVM): `PcmCapture`/`PcmDevice`, `CapturePolicy`, `PcmCaptureFormat`, `DebugLog`,
+    `WakeMatcher`, `WakeWord`.
   - `com.portal:commons-android`: `AudioRecordPcmDevice`, `WakeMicEngine`, `WakeMicConfig`, `WakeDetector`,
     `WakeDetectors.vosk()` (carries `vosk-android`). `WakeMicConfig.beforeMicAcquire` = mic-slot hook
     (portal-wake passes `MicLiberator.freeMic`).
