@@ -1,8 +1,8 @@
 package com.portal.wake.mic
 
 import com.portal.commons.DebugLog
-import com.portal.commons.PcmCapture
 import com.portal.commons.audio.CaptureLoss
+import com.portal.commons.audio.WakeMicEngine
 import com.portal.wake.mic.HandoffRecovery.Reclaim
 
 /**
@@ -324,7 +324,7 @@ internal class MicArbiter(
 
         // A retry has to capture this long without a loss to end the backoff streak: the engine's silence window,
         // plus a second for the open and the posted delivery that land a silenced loss just after the window.
-        internal const val RETRY_PROVEN_MS = PcmCapture.DEFAULT_SILENCE_WINDOW_MS + 1_000L
+        internal const val RETRY_PROVEN_MS = WakeMicEngine.SILENCE_WINDOW_MS + 1_000L
     }
 }
 
