@@ -15,7 +15,7 @@ These follow Vosk's own top recommendations and need no extra work:
    vocabulary matching the target keywords* is what makes short-phrase spotting reliable. We build a
    grammar from exactly the wake phrases + their keywords + each word's declared lead (e.g. `"hey"`) + an `"[unk]"` escape token, so the
    decoder either hears a wake phrase or dumps everything else into `[unk]` instead of forcing a
-   look-alike onto a wake word. → `buildGrammar` in portal-commons' Vosk detector (the internal `VoskWakeDetector`).
+   look-alike onto a wake word. → `buildGrammar` in portal-commons' wake decoder (the internal `WakeDecoder`).
 2. **A dynamic-graph (`lgraph`) model.** Runtime grammars require "a model with a dynamic graph"
    (per the adaptation page). `vosk-model-en-us-0.22-lgraph` is that model — its `Gr.fst` supports the
    `Recognizer(model, sampleRate, grammar)` constructor we use. Don't swap to a non-lgraph model
@@ -32,9 +32,9 @@ These follow Vosk's own top recommendations and need no extra work:
    these use. → `WakeMatcher` (all thresholds + gates live here, unit-tested).
 5. **A built-in feedback loop.** Vosk's debugging advice is "look at real transcripts." Every fire logs
    the full decode with per-word confidence to `files/debug.txt` —
-   `wake detected (vosk) → jarvis [hey(99) jarvis(100)]` — so thresholds and gates can be tuned from real
+   `wake detected → jarvis [hey(99) jarvis(100)]` — so thresholds and gates can be tuned from real
    on-device data instead of guesswork.
-   → `WakeMicEventHandler` / `WakeMicConfig.onWake`.
+   → `WakeMicEngine` / `WakeMicConfig.onWake`.
 
 ## What on-device testing showed (Portal+ "aloha", lgraph model, "hey jarvis")
 
@@ -78,7 +78,8 @@ the clean-phrase and cross-keyword gates — not the keyword floor — do the wo
 > dials below. It is handled in the capture/recognition layer: frames captured while the Vosk model is
 > still loading are buffered (the detector's pre-ready buffer) and replayed once it's ready, and the Kaldi
 > decoding-graph warm-up (`warmUp`) runs on every fresh decoder and after every reset. All of this lives in
-> portal-commons' Vosk detector (`VoskWakeDetector`, behind `WakeDetectors.vosk()`). If a first-utterance
+> portal-commons' wake detector and wake decoder (the internal `WakeDetector` and `WakeDecoder`, behind
+> `WakeMicEngine`). If a first-utterance
 > miss shows up, look there (and at `flushing N pre-ready frame(s)` in `debug.txt` — that log line is
 > unchanged), not at `WakeMatcher`.
 

@@ -14,10 +14,10 @@ import android.os.Looper
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import com.portal.commons.DebugLog
-import com.portal.commons.audio.WakeDetectors
 import com.portal.commons.audio.WakeEvent
 import com.portal.commons.audio.WakeMicConfig
 import com.portal.commons.audio.WakeMicEngine
+import com.portal.commons.audio.WakeModel
 import com.portal.wake.mic.MicArbiter
 import com.portal.wake.system.Falcon
 import com.portal.wake.system.MicLiberator
@@ -187,8 +187,8 @@ class WakeService :
             context = applicationContext,
             config = WakeMicConfig(
                 wakeWords = words,
-                detectors = listOf(WakeDetectors.vosk()),
-                onDetectorUnavailable = { DebugLog.log("wake unavailable (model missing) — service idle") },
+                model = WakeModel.Bundled,
+                onUnavailable = { DebugLog.log("wake unavailable (model missing) — service idle") },
                 // Runs on the engine's capture thread: only hop to main, where all orchestration runs
                 // single-threaded, so the capture thread only captures.
                 onWake = { event -> main.post { handoff.handOff(targets, event.wakeId) } },
