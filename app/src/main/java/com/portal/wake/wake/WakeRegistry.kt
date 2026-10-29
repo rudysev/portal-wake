@@ -7,8 +7,6 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
 import com.portal.commons.DebugLog
-import com.portal.commons.audio.WakeMatcher
-import com.portal.commons.audio.WakeWord
 import com.portal.wake.system.Falcon
 
 /**
@@ -67,10 +65,7 @@ object WakeRegistry {
                 DebugLog.log("registry: wake plugin ${component.flattenToShortString()}: $reason")
             },
         )
-        return word?.let {
-            warnIfMisdeclared(component, meta.text(WakeContract.META_PHRASE), it)
-            WakeTarget(it, Consumer.Plugin(packageName = info.packageName, className = info.name))
-        }
+        return word?.let { WakeTarget(it, Consumer.Plugin(packageName = info.packageName, className = info.name)) }
     }
 
     /**
@@ -82,28 +77,6 @@ object WakeRegistry {
     // the typed replacement getters can't read "whatever type it is".
     @Suppress("DEPRECATION")
     private fun Bundle.text(key: String): String? = get(key)?.toString()
-
-    /**
-     * Surface the two declaration mistakes that *build* a word but make it behave surprisingly (so they
-     * aren't silent like an outright rejection): a phrase longer than two words (only the last two are kept,
-     * so the rest never reach the grammar), and a strict word with no lead (it fires on the bare keyword).
-     */
-    private fun warnIfMisdeclared(component: ComponentName, declaredPhrase: String?, w: WakeWord) {
-        val wordCount = WakeWord.tokenize(declaredPhrase.orEmpty()).size
-        if (wordCount > 2) {
-            DebugLog.log(
-                "registry: ${component.flattenToShortString()} phrase \"$declaredPhrase\" has $wordCount words — " +
-                    "only the last two are used (lead \"${w.lead}\" + keyword \"${w.keyword}\"); " +
-                    "declare a two-word phrase",
-            )
-        }
-        if (w.lead == null && w.minConf > WakeMatcher.BASELINE_CONF) {
-            DebugLog.log(
-                "registry: ${component.flattenToShortString()} wake word '${w.keyword}' is strict but declares " +
-                    "no lead — it will fire on the bare keyword; declare a lead (e.g. \"hey ${w.keyword}\")",
-            )
-        }
-    }
 
     private fun isInstalled(pm: PackageManager, pkg: String): Boolean = runCatching {
         // DEPRECATION: the PackageInfoFlags overload is API 33+ and minSdk is 28.
