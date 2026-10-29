@@ -23,7 +23,7 @@ import com.portal.wake.system.Falcon
 import com.portal.wake.system.MicLiberator
 import com.portal.wake.wake.WakeContract
 import com.portal.wake.wake.WakeRegistry
-import com.portal.wake.wake.WakeTarget
+import com.portal.wake.wake.WakeSet
 import java.io.File
 
 /**
@@ -32,9 +32,9 @@ import java.io.File
  * boot by [BootReceiver] (and once at install time by `setup.sh`).
  *
  * Responsibilities are now deliberately narrow — **engine lifecycle + routing only**:
- *  - own the engine lifecycle (start on command, refresh the wake set on package changes via a debounced
- *    in-place grammar swap, stop on destroy);
- *  - **discover** wake targets at runtime via [WakeRegistry] and build the recognizer from them;
+ *  - own the engine lifecycle (build once on start command, refresh the wake set on package changes via a
+ *    debounced in-place grammar swap, close on destroy);
+ *  - **discover** the [WakeSet] at runtime via [WakeRegistry] and build the recognizer from its words;
  *  - **hand off** a match: trigger the consumer (a registered handler app via [WakeContract.ACTION_WAKE],
  *    or the native Alexa app via its LISTEN intent for "alexa").
  *
@@ -72,14 +72,16 @@ class WakeService :
         }
     }
 
-    private var engine: WakeMicEngine? = null
-    private var targets: List<WakeTarget> = emptyList()
+    // Set once in startListening(), on the first start command; nothing reads them before that. onDestroy guards
+    // on ::engine.isInitialized, not `started`, so a throw mid-startListening() can't crash teardown.
+    private lateinit var engine: WakeMicEngine
+    private lateinit var wakeSet: WakeSet
     private var started = false
 
     /**
      * Re-discover when wake plugins are installed/removed. A single reinstall delivers 2–3 broadcasts
      * (REMOVED+ADDED+REPLACED), so we *debounce* into one refresh ([scheduleWakeSetRefresh]); the refresh
-     * itself ([applyWakeSetChange]) no-ops when the discovered wake set is unchanged.
+     * itself ([applyWakeSetChange]) leaves the grammar alone when the wake words are unchanged.
      */
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent?) {
@@ -132,8 +134,7 @@ class WakeService :
         runCatching { audioManager.unregisterAudioRecordingCallback(recordingCallback) }
         arbiter.detach()
         runCatching { unregisterReceiver(packageReceiver) }
-        engine?.close()
-        engine = null
+        if (::engine.isInitialized) engine.close()
         // NB: deliberately do NOT DebugLog.close() here. DebugLog is a process-wide singleton shared with
         // BootReceiver and the next service instance; its file path never changes, so onCreate's re-set is a
         // no-op (one reused writer for the process's life, not a per-restart leak). Closing on a per-service
@@ -145,58 +146,50 @@ class WakeService :
 
     // "Start requested" (see the CaptureController contract); a busy mic comes back as a capture loss.
     override fun startCapture() {
-        engine?.start()
+        engine.start()
     }
 
     override fun pauseCapture() {
-        engine?.pause()
+        engine.pause()
     }
 
     // ---- engine lifecycle --------------------------------------------------------------------------
 
     /**
-     * Build the engine and, if one was built (the wake set is non-empty), start the arbiter (seeds call state,
-     * starts the poll, and does the first reconcile). Service start-up and the wake set becoming non-empty both
-     * come here. With no engine the arbiter is left unstarted, so a later non-empty set starts it exactly once.
+     * Discover the wake set, build the engine from its words, and start the arbiter (seeds call state, starts
+     * the poll, and does the first reconcile). Runs once, on the first start command. The engine is only
+     * built here — the arbiter starts it.
      */
     private fun startListening() {
-        buildEngine()
-        if (engine != null) arbiter.start()
-    }
-
-    /**
-     * The wake set became empty: detach the arbiter, then close the engine — so nothing stops capture behind
-     * the arbiter's back. A closed engine delivers no further capture loss.
-     */
-    private fun stopListening() {
-        arbiter.detach()
-        engine?.close()
-        engine = null
-    }
-
-    /** (Re)create the engine instance from the discovered wake set. Does NOT start it — the arbiter does. */
-    private fun buildEngine() {
-        targets = WakeRegistry.discover(this)
-        val words = WakeRegistry.wakeWords(targets)
-        if (words.isEmpty()) {
-            DebugLog.log("no wake words to listen for")
-            engine = null
-            return
-        }
+        wakeSet = WakeRegistry.discover(this)
         engine = WakeMicEngine(
             context = applicationContext,
             config = WakeMicConfig(
-                wakeWords = words,
+                wakeWords = wakeSet.words,
                 model = WakeModel.Bundled,
                 onUnavailable = { DebugLog.log("wake unavailable (model missing) — service idle") },
                 // Runs on the engine's capture thread: only hop to main, where all orchestration runs
                 // single-threaded, so the capture thread only captures.
-                onWake = { event -> main.post { handoff.handOff(targets, event.wakeId) } },
+                onWake = { event -> main.post { onWake(event.wakeId) } },
                 // On main; the engine logs the cause and never delivers one after close().
                 onCaptureLost = arbiter::onCaptureLost,
                 beforeMicAcquire = { MicLiberator.freeMic(applicationContext) },
             ),
         )
+        arbiter.start()
+    }
+
+    /**
+     * Hand off a fired wake [id] to its target in the current wake set. An id no longer in the set (heard just
+     * as the set changed) is logged and ignored, so a stale match never hands the mic to nobody.
+     */
+    private fun onWake(id: String) {
+        val target = wakeSet.target(id)
+        if (target == null) {
+            DebugLog.log("wake '$id' has no target (ignored)")
+            return
+        }
+        handoff.handOff(target)
     }
 
     /** Coalesce a burst of package broadcasts (one reinstall = 2–3) into a single debounced refresh. */
@@ -206,36 +199,21 @@ class WakeService :
     }
 
     /**
-     * Apply a wake-set change discovered from a package event. We **always** refresh [targets] (routing can
-     * change even when the words don't), then skip the expensive grammar/engine work when the words are
-     * unchanged. A genuine word change swaps the **grammar in place** ([WakeMicEngine.updateWakeWords]) — no
-     * engine teardown, mic keeps running. Only the empty↔non-empty transitions build or stop the engine.
+     * Apply a wake-set change discovered from a package event. We **always** adopt the new set (a wake target's
+     * consumer can change even when the words don't), and swap the **grammar in place**
+     * ([WakeMicEngine.updateWakeWords]) only when the words changed — no engine teardown, the mic keeps running.
      */
     private fun applyWakeSetChange() {
-        val newTargets = WakeRegistry.discover(this)
-        val newWords = WakeRegistry.wakeWords(newTargets)
-        val wordsUnchanged = WakeRegistry.sameWakeSet(WakeRegistry.wakeWords(targets), newWords)
-        targets = newTargets // ALWAYS refresh routing — the component for an unchanged word may have changed
-        if (wordsUnchanged) {
-            DebugLog.log("wake words unchanged → routing refreshed, no grammar rebuild")
-            return
-        }
-        when {
-            // Unreachable today (discover() always returns the built-in jarvis default), but routed through the
-            // arbiter so capture never stops behind its back.
-            newWords.isEmpty() -> {
-                DebugLog.log("wake set now empty → detaching arbiter, stopping engine")
-                stopListening()
-            }
+        if (!started) return // a package change before the first start command: startListening() discovers
+        val next = WakeRegistry.discover(this)
+        val refresh = wakeSet.refresh(next)
+        wakeSet = next
+        when (refresh) {
+            WakeSet.Refresh.Unchanged -> DebugLog.log("wake words unchanged → consumers refreshed, no grammar rebuild")
 
-            engine == null -> {
-                DebugLog.log("wake set now non-empty → building engine, starting arbiter")
-                startListening()
-            }
-
-            else -> {
+            is WakeSet.Refresh.Swap -> {
                 DebugLog.log("wake set changed → swapping grammar in place")
-                engine?.updateWakeWords(newWords)
+                engine.updateWakeWords(refresh.words)
             }
         }
     }
