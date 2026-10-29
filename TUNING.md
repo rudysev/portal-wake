@@ -13,9 +13,11 @@ These follow Vosk's own top recommendations and need no extra work:
 
 1. **Restricted grammar (the single biggest win).** Vosk's accuracy page stresses that a *fixed
    vocabulary matching the target keywords* is what makes short-phrase spotting reliable. We build a
-   grammar from exactly the wake phrases + their keywords + each word's declared lead (e.g. `"hey"`) + an `"[unk]"` escape token, so the
+   grammar from exactly the wake phrases + each word's declared lead (e.g. `"hey"`) + an `"[unk]"` escape token, so the
    decoder either hears a wake phrase or dumps everything else into `[unk]` instead of forcing a
-   look-alike onto a wake word. → `buildGrammar` in portal-commons' wake decoder (the internal `WakeDecoder`).
+   look-alike onto a wake word. A bare keyword is an entry only for a word with **no** lead: offering
+   `"jarvis"` alone let the decoder explain a quiet, unstressed "hey" as silence and decode `[jarvis]` —
+   86% of on-device misses — although the matcher never fires on it. → `buildGrammar` in portal-commons' wake decoder (the internal `WakeDecoder`).
 2. **A dynamic-graph (`lgraph`) model.** Runtime grammars require "a model with a dynamic graph"
    (per the adaptation page). `vosk-model-en-us-0.22-lgraph` is that model — its `Gr.fst` supports the
    `Recognizer(model, sampleRate, grammar)` constructor we use. Don't swap to a non-lgraph model
@@ -58,8 +60,8 @@ the clean-phrase and cross-keyword gates — not the keyword floor — do the wo
 - **Precision (a second failure mode: a clean phrase with a weak "hey").** A live false fire during a
   phone call held near the Portal decoded `[[unk](100) hey(66) jarvis(95)]` — a *short, clean* phrase that
   the clean-phrase and cross-keyword gates above can't catch (it isn't long, and carries no rival keyword).
-  What distinguishes it from a real wake is the **"hey" confidence**: 0.66 here vs **0.96–1.00** for every
-  genuine wake. Fixed by gating the preceding "hey" on `WakeMatcher.LEAD_MIN_CONF` (0.80) for strict routes —
+  What distinguishes it from a real wake is the **"hey" confidence**: 0.66 here, while genuine wakes clear
+  0.70. Fixed by gating the preceding "hey" on `WakeMatcher.LEAD_MIN_CONF` (0.70) for strict routes —
   present-but-weak no longer passes. The call audio reached the mic at all because the call stand-down reads the
   *Portal's* audio mode and so is blind to a call on a *separate phone*; the matcher floor is the backstop.
 
@@ -106,11 +108,12 @@ All in `WakeMatcher` / per-`WakeWord`:
   **`hey`/`hay` only**). A lead with no entry matches itself only. Kept tight: `a`, `hi`, and `he` were
   dropped from `hey` — too-common lead-ins (filler / mis-decodes) that widened false fires. Add a variant
   back only if the logs show a real wake lost because the lead was misheard.
-- **`WakeMatcher.LEAD_MIN_CONF`** (0.80) — the confidence the preceding lead must clear on a **strict**
-  route. Real wakes decode "hey" at 0.96–1.00, so this is near-free on recall; it blocks a clean short
-  phrase with an under-confident "hey" (observed: 0.66 from phone-call audio over a speaker). Lenient
-  routes ignore it (present-only). Raise it toward 0.9 to be stricter on noisy "hey"s; if the logs show a
-  genuine wake lost with `hey(0.8x)`, lower it — don't drop below the observed FP (0.66).
+- **`WakeMatcher.LEAD_MIN_CONF`** (0.70) — the confidence the preceding lead must clear on a **strict**
+  route. It blocks a clean short phrase with an under-confident "hey" (observed: 0.66 from phone-call audio
+  over a speaker). Lenient routes ignore it (present-only). It was 0.80, but "hey" is short and 10–25 dB
+  quieter than "jarvis" on the Portal mic, so a genuine wake often decodes it at 0.7x; replaying 419 recorded
+  wakes through the wake detector, 0.70 plus the lead-only grammar took recall from 70% to 78%, for 1 extra
+  fire in 1,000 hard negatives. Don't drop below the observed FP (0.66).
 - **`WakeMatcher.UNK_TOKEN`** (`[unk]`) — Vosk's "unknown" escape token. On a **strict** route, **any**
   `[unk]` in the decode is contamination and rejects the fire outright (a genuine close-mic wake never
   decodes one). This is a binary gate, not a tunable threshold — it's the strongest precision lever for a
