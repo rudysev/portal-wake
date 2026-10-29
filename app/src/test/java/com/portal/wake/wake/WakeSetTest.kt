@@ -1,6 +1,5 @@
 package com.portal.wake.wake
 
-import android.content.ComponentName
 import com.portal.commons.audio.WakeMatcher
 import com.portal.commons.audio.WakeWord
 import org.junit.Assert.assertEquals
@@ -17,8 +16,7 @@ class WakeSetTest {
             WakeSpec.build(phrase, id = id, minConfidence = minConfidence, defaultMinConf = WakeMatcher.BASELINE_CONF) {
             },
         ),
-        component = ComponentName(pkg, "$pkg.WakeReceiver"),
-        source = pkg,
+        consumer = Consumer.Plugin(packageName = pkg, className = "$pkg.WakeReceiver"),
     )
 
     // The assistant's manifest declares exactly the built-in jarvis word (STRICT_MIN_CONF == 0.60).
@@ -32,8 +30,7 @@ class WakeSetTest {
         assertEquals("hey", word.lead)
         assertEquals("hey jarvis", word.phrase)
         assertEquals(WakeMatcher.STRICT_MIN_CONF, word.minConf, 1e-9)
-        assertNull(set.target("jarvis")?.component)
-        assertNull(set.target("jarvis")?.source)
+        assertNull(set.target("jarvis")?.consumer)
     }
 
     @Test fun alexaIsListenedForOnlyWhenTheNativeAlexaClientIsInstalled() {
@@ -43,8 +40,21 @@ class WakeSetTest {
         val alexa = withAlexa.words.single { it.id == "alexa" }
         assertEquals("hey alexa", alexa.phrase)
         assertEquals(WakeMatcher.STRICT_MIN_CONF, alexa.minConf, 1e-9)
+        assertEquals(Consumer.NativeAlexa, withAlexa.target("alexa")?.consumer)
         assertNull(withoutAlexa.target("alexa"))
         assertEquals(listOf("jarvis"), withoutAlexa.words.map { it.id })
+    }
+
+    @Test fun aPluginClaimingAlexaOverridesTheNativeAlexaClient() {
+        val alexaPlugin = plugin("hey alexa", id = "alexa", minConfidence = "0.6", pkg = "com.example.alexa")
+
+        val set = WakeSet.of(plugins = listOf(alexaPlugin), nativeAlexaInstalled = true)
+
+        assertEquals(
+            Consumer.Plugin(packageName = "com.example.alexa", className = "com.example.alexa.WakeReceiver"),
+            set.target("alexa")?.consumer,
+        )
+        assertEquals(listOf("alexa", "jarvis"), set.words.map(WakeWord::id))
     }
 
     @Test fun installingTheAssistantLeavesTheWordsUnchangedButMakesItJarvisConsumer() {
@@ -52,7 +62,10 @@ class WakeSetTest {
         val after = WakeSet.of(plugins = listOf(assistant), nativeAlexaInstalled = false)
 
         assertEquals(WakeSet.Refresh.Unchanged, before.refresh(after))
-        assertEquals("com.portal.assistant", after.target("jarvis")?.source)
+        assertEquals(
+            Consumer.Plugin(packageName = "com.portal.assistant", className = "com.portal.assistant.WakeReceiver"),
+            after.target("jarvis")?.consumer,
+        )
         assertEquals(listOf("jarvis"), after.words.map(WakeWord::id))
     }
 

@@ -1,25 +1,36 @@
 package com.portal.wake.service
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import com.portal.commons.DebugLog
 import com.portal.wake.mic.MicArbiter
 import com.portal.wake.system.Falcon
+import com.portal.wake.wake.Consumer
 import com.portal.wake.wake.WakeContract
 import com.portal.wake.wake.WakeTarget
 
 /**
- * The handoff for [WakeService]: stands down and wakes a fired wake word's consumer — a wake plugin via
- * [WakeContract.ACTION_WAKE], or the native Alexa app via its LISTEN intent for "alexa". Main thread only.
+ * The handoff for [WakeService]: stands down and wakes a fired wake target's [Consumer], decided at discovery —
+ * a wake plugin via [WakeContract.ACTION_WAKE], or the native Alexa client via its LISTEN intent. A target with
+ * no consumer is only logged. Main thread only.
  */
 internal class WakeHandoff(private val context: Context, private val arbiter: MicArbiter) {
 
     /** Hand off a fired wake [target] to its consumer. */
     fun handOff(target: WakeTarget) {
         val id = target.word.id
-        val component = target.component
-        when {
-            id == ROUTE_ALEXA -> standDownThenWake("alexa → falcon LISTEN") {
+        when (val consumer = target.consumer) {
+            is Consumer.Plugin -> standDownThenWake("$id → ${consumer.packageName}") {
+                context.sendBroadcast(
+                    Intent(WakeContract.ACTION_WAKE)
+                        .setComponent(ComponentName(consumer.packageName, consumer.className))
+                        .putExtra(WakeContract.EXTRA_WAKE_ID, id)
+                        .addFlags(HANDOFF_FLAGS),
+                )
+            }
+
+            Consumer.NativeAlexa -> standDownThenWake("$id → falcon LISTEN") {
                 context.sendBroadcast(
                     Intent(Falcon.LISTEN_ACTION)
                         .setPackage(Falcon.PACKAGE)
@@ -27,16 +38,7 @@ internal class WakeHandoff(private val context: Context, private val arbiter: Mi
                 )
             }
 
-            component != null -> standDownThenWake("$id → ${target.source}") {
-                context.sendBroadcast(
-                    Intent(WakeContract.ACTION_WAKE)
-                        .setComponent(component)
-                        .putExtra(WakeContract.EXTRA_WAKE_ID, id)
-                        .addFlags(HANDOFF_FLAGS),
-                )
-            }
-
-            else -> DebugLog.log("WAKE '$id' (no handler installed)")
+            null -> DebugLog.log("WAKE '$id' (no consumer installed)")
         }
     }
 
@@ -51,10 +53,6 @@ internal class WakeHandoff(private val context: Context, private val arbiter: Mi
     }
 
     private companion object {
-        // Built-in "hey alexa" convenience route: trigger the Portal's native Alexa client directly (see
-        // [Falcon]). Third-party handlers use the ACTION_WAKE contract instead of being hard-coded here.
-        const val ROUTE_ALEXA = "alexa"
-
         // Handoff broadcast flags. INCLUDE_STOPPED_PACKAGES so a force-stopped consumer still receives it;
         // RECEIVER_FOREGROUND so it goes through Android's foreground broadcast queue (the background queue
         // adds noticeable latency to a cold consumer's "hey jarvis" → assistant-ready path).

@@ -35,8 +35,8 @@ import java.io.File
  *  - own the engine lifecycle (build once on start command, refresh the wake set on package changes via a
  *    debounced in-place grammar swap, close on destroy);
  *  - **discover** the [WakeSet] at runtime via [WakeRegistry] and build the recognizer from its words;
- *  - **hand off** a match: trigger the consumer (a registered handler app via [WakeContract.ACTION_WAKE],
- *    or the native Alexa app via its LISTEN intent for "alexa").
+ *  - **hand off** a match: look up its wake target and let [WakeHandoff] wake the consumer decided at
+ *    discovery (a wake plugin via [WakeContract.ACTION_WAKE], or the native Alexa client via its LISTEN intent).
  *
  * The "should we be holding the mic right now" decision flow — handoff recovery, foreign-mic contention,
  * phone/VoIP call stand-down, and the single reconcile rule that starts/pauses capture — now lives in
