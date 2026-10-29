@@ -7,18 +7,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * [WakeSpec.build] — turns a plugin's declared meta-data fields into a validated [com.portal.commons.audio.WakeWord],
- * reporting any mistake (with the offending field) so a developer can fix it from the log. Keyword/lead
- * derivation is WakeWord.fromPhrase's job; here we cover validation + that the right reason is reported.
+ * [WakeDeclaration.build] — turns a plugin's wake declaration (its meta-data fields) into a validated
+ * [com.portal.commons.audio.WakeWord], reporting any mistake (with the offending field) so a developer can fix it
+ * from the log. Keyword/lead derivation is WakeWord.fromPhrase's job; here we cover validation + that the right
+ * reason is reported.
  */
-class WakeSpecTest {
+class WakeDeclarationTest {
 
     private fun build(
         phrase: String?,
         id: String? = null,
         minConfidence: String? = null,
         onError: (String) -> Unit = {},
-    ) = WakeSpec.build(phrase, id, minConfidence, WakeMatcher.BASELINE_CONF, onError)
+    ) = WakeDeclaration.build(phrase, id, minConfidence, WakeMatcher.BASELINE_CONF, onError)
 
     @Test fun buildsAndDerivesKeywordAndLead() {
         val w = build("hey jarvis", id = "jarvis", minConfidence = "0.6")!!

@@ -15,6 +15,12 @@ An installed app that advertises its own wake word to Portal-Wake through the pu
 becomes the consumer when that word is heard.
 _Avoid_: handler app, extension, integration
 
+**Wake declaration**:
+The wake word a wake plugin declares on its receiver as meta-data, a phrase plus an optional id and min
+confidence. Portal-Wake checks it and reports each mistake to `debug.txt`; only a missing phrase rejects it.
+In code: `WakeDeclaration`.
+_Avoid_: spec, manifest entry
+
 **Wake set**:
 The wake words currently in force: those discovered from installed wake plugins, plus a built-in default for
 each word no plugin claims. A plugin always wins over a built-in default for the same word. Never empty: "hey

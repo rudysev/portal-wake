@@ -18,8 +18,8 @@ import com.portal.wake.system.Falcon
  *
  * Discovery (the extensible path): every app that responds to [WakeContract.ACTION_WAKE] and declares a
  * [WakeContract.META_PHRASE] (plus optional id/min-confidence) meta-data is a wake plugin. We build its
- * wake word ([WakeSpec]) and a [Consumer.Plugin] naming its receiver. Adding "hey X" is therefore a manifest entry
- * in *that* app — no change here.
+ * wake word from its wake declaration ([WakeDeclaration]) and a [Consumer.Plugin] naming its receiver. Adding
+ * "hey X" is therefore a manifest entry in *that* app — no change here.
  *
  * The Portal's Alexa stack is `com.millennium` (the "Hey Alexa" Vosk detector, on the handset mic) driving
  * `falcon` (the Alexa client). We suppress millennium — it competes for our handset-mic slot, which also
@@ -60,9 +60,9 @@ object WakeRegistry {
     private fun pluginTarget(info: ActivityInfo, meta: Bundle): WakeTarget? {
         val component = ComponentName(info.packageName, info.name)
         // One receiver declares one wake word (more words = more receivers). Build it from the named
-        // meta-data fields; WakeSpec reports any mistake (with the bad field) so a developer can fix it.
+        // meta-data fields; WakeDeclaration reports any mistake (with the bad field) so a developer can fix it.
         val phrase = meta.text(WakeContract.META_PHRASE)
-        val word = WakeSpec.build(
+        val word = WakeDeclaration.build(
             phrase = phrase,
             id = meta.text(WakeContract.META_ID),
             minConfidence = meta.text(WakeContract.META_MIN_CONFIDENCE),
@@ -80,7 +80,7 @@ object WakeRegistry {
     /**
      * Read one meta-data field as text, whatever type Android inferred for `android:value` (a numeric value
      * like `0.55` is stored as a Float, so `getString` would return null — `get()?.toString()` keeps it, and
-     * also lets a typo'd value reach [WakeSpec]'s "not a number" diagnostic instead of looking absent).
+     * also lets a typo'd value reach [WakeDeclaration]'s "not a number" diagnostic instead of looking absent).
      */
     // DEPRECATION: the untyped Bundle.get() is the point (the value's type depends on how Android parsed it), and
     // the typed replacement getters can't read "whatever type it is".
