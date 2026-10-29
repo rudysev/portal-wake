@@ -1,11 +1,12 @@
 package com.portal.wake.wake
 
+import com.portal.commons.audio.WakeMatcher
 import com.portal.commons.audio.WakeWord
 
 /**
  * A wake plugin's wake declaration: builds a [WakeWord] from its declared meta-data fields (see
- * [WakeContract]). Reading the raw values off the manifest `Bundle` is the caller's job ([WakeRegistry]); this
- * validates them and turns them into a [WakeWord].
+ * [WakeContract]). It reads the contract's keys itself through a key-to-text reader; reading each value off the
+ * manifest `Bundle` is the caller's job ([WakeRegistry]). This validates them and turns them into a [WakeWord].
  *
  * Every declaration problem is reported through [build]'s `onProblem` with the **exact field**, so a
  * developer sees e.g. `'com.portal.wake.min_confidence' is not a number in 0.0..1.0: "abc" — using
@@ -16,26 +17,23 @@ import com.portal.commons.audio.WakeWord
 object WakeDeclaration {
 
     /**
-     * Validate the declared fields and build a [WakeWord], reporting any problem via [onProblem]:
-     *  - [phrase] missing/blank → **rejected** (returns null); it's the one required field;
-     *  - [minConfidence] absent/blank, or present but not a number in [[WakeContract.MIN_CONFIDENCE],
-     *    [WakeContract.MAX_CONFIDENCE]] → falls back to [defaultMinConf]. A malformed value is reported
-     *    (loud) but does **not** reject the word — the field is optional, so a typo here shouldn't disable
-     *    an otherwise-valid wake word;
-     *  - [id] absent/blank → the keyword (handled in [WakeWord.fromPhrase]).
+     * Read the declared fields through [read] (a [WakeContract] meta-data key → its text, null when absent),
+     * validate them and build a [WakeWord], reporting any problem via [onProblem]:
+     *  - [WakeContract.META_PHRASE] missing/blank → **rejected** (returns null); it's the one required field;
+     *  - [WakeContract.META_MIN_CONFIDENCE] absent/blank, or present but not a number in
+     *    [[WakeContract.MIN_CONFIDENCE], [WakeContract.MAX_CONFIDENCE]] → falls back to
+     *    [WakeMatcher.BASELINE_CONF]. A malformed value is reported (loud) but does **not** reject the word — the
+     *    field is optional, so a typo here shouldn't disable an otherwise-valid wake word;
+     *  - [WakeContract.META_ID] absent/blank → the keyword (handled in [WakeWord.fromPhrase]).
      */
-    fun build(
-        phrase: String?,
-        id: String?,
-        minConfidence: String?,
-        defaultMinConf: Double,
-        onProblem: (reason: String) -> Unit,
-    ): WakeWord? {
+    fun build(read: (key: String) -> String?, onProblem: (reason: String) -> Unit): WakeWord? {
+        val phrase = read(WakeContract.META_PHRASE)
         if (phrase.isNullOrBlank()) {
             onProblem("missing required '${WakeContract.META_PHRASE}'")
             return null
         }
-        val minConf = minConfOrDefault(minConfidence, defaultMinConf, onProblem)
+        val id = read(WakeContract.META_ID)
+        val minConf = minConfOrDefault(read(WakeContract.META_MIN_CONFIDENCE), onProblem)
         // phrase is non-blank (guarded above), so fromPhrase always yields a usable word.
         val word = WakeWord.fromPhrase(phrase, id, minConf)
         // A provided id that isn't the derived keyword is usually a typo (e.g. phrase="hey vega",
@@ -51,13 +49,11 @@ object WakeDeclaration {
     }
 
     /**
-     * The declared [minConfidence], or [defaultMinConf] when it is absent, or reported via [onProblem] when invalid.
+     * The declared [minConfidence], or [WakeMatcher.BASELINE_CONF] when it is absent, or reported via [onProblem]
+     * when invalid.
      */
-    private fun minConfOrDefault(
-        minConfidence: String?,
-        defaultMinConf: Double,
-        onProblem: (reason: String) -> Unit,
-    ): Double {
+    private fun minConfOrDefault(minConfidence: String?, onProblem: (reason: String) -> Unit): Double {
+        val defaultMinConf = WakeMatcher.BASELINE_CONF
         val n = minConfidence?.trim()?.toDoubleOrNull()
         return when {
             minConfidence.isNullOrBlank() -> defaultMinConf

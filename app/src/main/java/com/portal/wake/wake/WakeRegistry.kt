@@ -59,20 +59,16 @@ object WakeRegistry {
     /** The wake target one plugin receiver declares in its [meta]-data, or null if the declaration is rejected. */
     private fun pluginTarget(info: ActivityInfo, meta: Bundle): WakeTarget? {
         val component = ComponentName(info.packageName, info.name)
-        // One receiver declares one wake word (more words = more receivers). Build it from the named
-        // meta-data fields; WakeDeclaration reports any mistake (with the bad field) so a developer can fix it.
-        val phrase = meta.text(WakeContract.META_PHRASE)
+        // One receiver declares one wake word (more words = more receivers). WakeDeclaration reads its
+        // meta-data fields and reports any mistake (with the bad field) so a developer can fix it.
         val word = WakeDeclaration.build(
-            phrase = phrase,
-            id = meta.text(WakeContract.META_ID),
-            minConfidence = meta.text(WakeContract.META_MIN_CONFIDENCE),
-            defaultMinConf = WakeMatcher.BASELINE_CONF,
+            read = { key -> meta.text(key) },
             onProblem = { reason ->
                 DebugLog.log("registry: wake plugin ${component.flattenToShortString()}: $reason")
             },
         )
         return word?.let {
-            warnIfMisdeclared(component, phrase, it)
+            warnIfMisdeclared(component, meta.text(WakeContract.META_PHRASE), it)
             WakeTarget(it, Consumer.Plugin(packageName = info.packageName, className = info.name))
         }
     }
