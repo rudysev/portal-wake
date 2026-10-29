@@ -87,11 +87,50 @@ class WakeDeclarationTest {
         }
     }
 
-    @Test fun phraseLongerThanTwoWordsKeepsLastTwo() {
+    @Test fun phraseLongerThanTwoWordsKeepsLastTwoWithWarning() {
         // Documents the single-token-lead limitation: the keyword is the last word, the lead the one before.
-        val w = build("hey there jarvis")!!
+        val warnings = mutableListOf<String>()
+        val w = build("hey there jarvis", onError = { warnings.add(it) })!!
         assertEquals("jarvis", w.keyword)
         assertEquals("there", w.lead)
+        assertTrue(warnings.single().contains("only the last two"))
+    }
+
+    @Test fun strictWordWithNoLeadWarns() {
+        val warnings = mutableListOf<String>()
+        val w = build("computer", minConfidence = "0.8", onError = { warnings.add(it) })!!
+        assertEquals(0.8, w.minConf, 1e-9)
+        assertTrue(warnings.single().contains("no lead"))
+    }
+
+    @Test fun strictWordWithALeadDoesNotWarn() {
+        val warnings = mutableListOf<String>()
+        build("hey computer", minConfidence = "0.8", onError = { warnings.add(it) })
+        assertTrue(warnings.isEmpty())
+    }
+
+    @Test fun baselineWordWithNoLeadDoesNotWarn() {
+        val warnings = mutableListOf<String>()
+        build("computer", minConfidence = WakeMatcher.BASELINE_CONF.toString(), onError = { warnings.add(it) })
+        build("computer", onError = { warnings.add(it) })
+        assertTrue(warnings.isEmpty())
+    }
+
+    @Test fun correctDeclarationReportsNothing() {
+        val warnings = mutableListOf<String>()
+        val w = build("hey jarvis", id = "jarvis", minConfidence = "0.7", onError = { warnings.add(it) })
+        assertEquals("jarvis", w!!.id)
+        assertTrue(warnings.isEmpty())
+    }
+
+    @Test fun reportsEachOfSeveralMistakes() {
+        val warnings = mutableListOf<String>()
+        val w = build("hey there vega", id = "jarvis", minConfidence = "abc", onError = { warnings.add(it) })
+        assertEquals("vega", w!!.keyword)
+        assertEquals(3, warnings.size)
+        assertTrue(warnings.any { WakeContract.META_MIN_CONFIDENCE in it })
+        assertTrue(warnings.any { WakeContract.META_ID in it })
+        assertTrue(warnings.any { "only the last two" in it })
     }
 
     @Test fun idNotMatchingKeywordWarnsButStillBuilds() {

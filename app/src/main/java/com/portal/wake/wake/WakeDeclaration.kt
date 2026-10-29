@@ -24,7 +24,10 @@ object WakeDeclaration {
      *    [[WakeContract.MIN_CONFIDENCE], [WakeContract.MAX_CONFIDENCE]] → falls back to
      *    [WakeMatcher.BASELINE_CONF]. A malformed value is reported (loud) but does **not** reject the word — the
      *    field is optional, so a typo here shouldn't disable an otherwise-valid wake word;
-     *  - [WakeContract.META_ID] absent/blank → the keyword (handled in [WakeWord.fromPhrase]).
+     *  - [WakeContract.META_ID] absent/blank → the keyword (handled in [WakeWord.fromPhrase]); present but not
+     *    the derived keyword → reported (likely a typo), the word still builds with that id;
+     *  - a phrase of more than two words, or a word stricter than [WakeMatcher.BASELINE_CONF] with no lead →
+     *    reported, the word still builds.
      */
     fun build(read: (key: String) -> String?, onProblem: (reason: String) -> Unit): WakeWord? {
         val phrase = read(WakeContract.META_PHRASE)
@@ -45,7 +48,29 @@ object WakeDeclaration {
                     "'${WakeContract.META_PHRASE}' — is that intended?",
             )
         }
+        if (word != null) warnIfSurprising(phrase, word, onProblem)
         return word
+    }
+
+    /**
+     * Report the declaration mistakes that *build* a word but make it behave surprisingly: a phrase longer than
+     * two words (only the last two are kept, so the rest never reach the grammar), and a word stricter than
+     * [WakeMatcher.BASELINE_CONF] with no lead (it fires on the bare keyword).
+     */
+    private fun warnIfSurprising(declaredPhrase: String, w: WakeWord, onProblem: (reason: String) -> Unit) {
+        val wordCount = WakeWord.tokenize(declaredPhrase).size
+        if (wordCount > 2) {
+            onProblem(
+                "phrase \"$declaredPhrase\" has $wordCount words — only the last two are used " +
+                    "(lead \"${w.lead}\" + keyword \"${w.keyword}\"); declare a two-word phrase",
+            )
+        }
+        if (w.lead == null && w.minConf > WakeMatcher.BASELINE_CONF) {
+            onProblem(
+                "wake word '${w.keyword}' is strict but declares no lead — it will fire on the bare keyword; " +
+                    "declare a lead (e.g. \"hey ${w.keyword}\")",
+            )
+        }
     }
 
     /**
