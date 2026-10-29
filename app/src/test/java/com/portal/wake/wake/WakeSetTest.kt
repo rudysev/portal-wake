@@ -13,7 +13,12 @@ class WakeSetTest {
     /** A wake plugin target as the registry discovers it, from the plugin's declared meta-data. */
     private fun plugin(phrase: String, id: String, minConfidence: String, pkg: String) = WakeTarget(
         word = checkNotNull(
-            WakeSpec.build(phrase, id = id, minConfidence = minConfidence, defaultMinConf = WakeMatcher.BASELINE_CONF) {
+            WakeDeclaration.build(
+                phrase,
+                id = id,
+                minConfidence = minConfidence,
+                defaultMinConf = WakeMatcher.BASELINE_CONF,
+            ) {
             },
         ),
         consumer = Consumer.Plugin(packageName = pkg, className = "$pkg.WakeReceiver"),

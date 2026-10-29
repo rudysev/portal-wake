@@ -52,8 +52,9 @@ native Alexa client `falcon` (`LISTEN` intent) is only the built-in default, pre
   inlined at compile time), so it tracks the values the engine uses. `MicArbiter` = state machine: two pause reasons
   (call, handoff), single `reconcile()`. Internal: `HandoffRecovery` (reclaim rule), `MicContentionDetector`.
 - `wake/` — this app's own (not shared): `WakeContract` (plugin contract; meta-data key strings are the wire
-  contract, mirrored by plugins), `WakeSpec`, `WakeRegistry` (Android reads only: plugin receivers + is falcon
-  installed), `WakeSet` (pure: defaults, plugin-wins, never empty, lookup, refresh `Unchanged`/`Swap`),
+  contract, mirrored by plugins), `WakeDeclaration` (pure: checks a plugin's declared meta-data, reports each
+  mistake, builds its wake word), `WakeRegistry` (Android reads only: plugin receivers + is falcon installed),
+  `WakeSet` (pure: defaults, plugin-wins, never empty, lookup, refresh `Unchanged`/`Swap`),
   `WakeTarget` (word + `Consumer?`: sealed `Plugin`/`NativeAlexa`, decided at discovery; null = match only logged).
 - `system/` — `MicLiberator` (frees mic slot), `Falcon` (native Alexa client ids).
 - **portal-commons** (edits change both apps):

@@ -3,9 +3,9 @@ package com.portal.wake.wake
 import com.portal.commons.audio.WakeWord
 
 /**
- * Builds a [WakeWord] from one wake plugin's declared meta-data fields (see [WakeContract]). Reading the
- * raw values off the manifest `Bundle` is the caller's job ([WakeRegistry]); this validates them and turns
- * them into a [WakeWord].
+ * A wake plugin's wake declaration: builds a [WakeWord] from its declared meta-data fields (see
+ * [WakeContract]). Reading the raw values off the manifest `Bundle` is the caller's job ([WakeRegistry]); this
+ * validates them and turns them into a [WakeWord].
  *
  * Every declaration problem is reported through [build]'s `onProblem` with the **exact field**, so a
  * developer sees e.g. `'com.portal.wake.min_confidence' is not a number in 0.0..1.0: "abc" — using
@@ -13,7 +13,7 @@ import com.portal.commons.audio.WakeWord
  * [WakeWord.fromPhrase] (one owner); this only validates and delegates. Pure Kotlin/JVM (no Android),
  * fully unit-tested.
  */
-object WakeSpec {
+object WakeDeclaration {
 
     /**
      * Validate the declared fields and build a [WakeWord], reporting any problem via [onProblem]:
