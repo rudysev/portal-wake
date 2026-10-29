@@ -1,6 +1,7 @@
 package com.portal.wake.wake
 
 import com.portal.commons.audio.WakeMatcher
+import com.portal.commons.audio.WakeWord
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -14,12 +15,20 @@ import org.junit.Test
  */
 class WakeDeclarationTest {
 
+    /** Declare the given fields as a plugin's meta-data would (a null field is left out entirely) and build it. */
     private fun build(
         phrase: String?,
         id: String? = null,
         minConfidence: String? = null,
         onError: (String) -> Unit = {},
-    ) = WakeDeclaration.build(phrase, id, minConfidence, WakeMatcher.BASELINE_CONF, onError)
+    ): WakeWord? {
+        val meta = listOf(
+            WakeContract.META_PHRASE to phrase,
+            WakeContract.META_ID to id,
+            WakeContract.META_MIN_CONFIDENCE to minConfidence,
+        ).filter { it.second != null }.toMap()
+        return WakeDeclaration.build(meta::get, onError)
+    }
 
     @Test fun buildsAndDerivesKeywordAndLead() {
         val w = build("hey jarvis", id = "jarvis", minConfidence = "0.6")!!

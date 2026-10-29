@@ -14,10 +14,11 @@ class WakeSetTest {
     private fun plugin(phrase: String, id: String, minConfidence: String, pkg: String) = WakeTarget(
         word = checkNotNull(
             WakeDeclaration.build(
-                phrase,
-                id = id,
-                minConfidence = minConfidence,
-                defaultMinConf = WakeMatcher.BASELINE_CONF,
+                mapOf(
+                    WakeContract.META_PHRASE to phrase,
+                    WakeContract.META_ID to id,
+                    WakeContract.META_MIN_CONFIDENCE to minConfidence,
+                )::get,
             ) {
             },
         ),
