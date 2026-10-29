@@ -19,8 +19,8 @@ class WakeSetTest {
                     WakeContract.META_ID to id,
                     WakeContract.META_MIN_CONFIDENCE to minConfidence,
                 )::get,
-            ) {
-            },
+                onProblem = {},
+            ),
         ),
         consumer = Consumer.Plugin(packageName = pkg, className = "$pkg.WakeReceiver"),
     )
