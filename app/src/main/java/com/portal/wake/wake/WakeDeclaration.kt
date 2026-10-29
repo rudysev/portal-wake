@@ -6,7 +6,7 @@ import com.portal.commons.audio.WakeWord
 /**
  * A wake plugin's wake declaration: builds a [WakeWord] from its declared meta-data fields (see
  * [WakeContract]). It reads the contract's keys itself through a key-to-text reader; reading each value off the
- * manifest `Bundle` is the caller's job ([WakeRegistry]). This validates them and turns them into a [WakeWord].
+ * manifest `Bundle` is the caller's job ([WakeRegistry]).
  *
  * Every declaration problem is reported through [build]'s `onProblem` with the **exact field**, so a
  * developer sees e.g. `'com.portal.wake.min_confidence' is not a number in 0.0..1.0: "abc" — using
@@ -30,25 +30,28 @@ object WakeDeclaration {
      *    reported, the word still builds.
      */
     fun build(read: (key: String) -> String?, onProblem: (reason: String) -> Unit): WakeWord? {
-        val phrase = read(WakeContract.META_PHRASE)
-        if (phrase.isNullOrBlank()) {
+        val phrase = read(WakeContract.META_PHRASE).orEmpty()
+        val id = read(WakeContract.META_ID)
+        // A blank phrase is rejected before min_confidence is read, so a missing phrase is its only problem.
+        val word = if (phrase.isBlank()) {
+            null
+        } else {
+            WakeWord.fromPhrase(phrase, id, minConfOrDefault(read(WakeContract.META_MIN_CONFIDENCE), onProblem))
+        }
+        if (word == null) {
             onProblem("missing required '${WakeContract.META_PHRASE}'")
             return null
         }
-        val id = read(WakeContract.META_ID)
-        val minConf = minConfOrDefault(read(WakeContract.META_MIN_CONFIDENCE), onProblem)
-        // phrase is non-blank (guarded above), so fromPhrase always yields a usable word.
-        val word = WakeWord.fromPhrase(phrase, id, minConf)
         // A provided id that isn't the derived keyword is usually a typo (e.g. phrase="hey vega",
         // id="jarvis"). It still builds (an id may legitimately differ), but flag it — the id is what's
         // reported on a match and what overrides a built-in default.
-        if (word != null && !id.isNullOrBlank() && word.id != word.keyword) {
+        if (!id.isNullOrBlank() && word.id != word.keyword) {
             onProblem(
                 "'${WakeContract.META_ID}' \"${word.id}\" is not the keyword \"${word.keyword}\" derived from " +
                     "'${WakeContract.META_PHRASE}' — is that intended?",
             )
         }
-        if (word != null) warnIfSurprising(phrase, word, onProblem)
+        warnIfSurprising(phrase, word, onProblem)
         return word
     }
 
@@ -61,14 +64,16 @@ object WakeDeclaration {
         val wordCount = WakeWord.tokenize(declaredPhrase).size
         if (wordCount > 2) {
             onProblem(
-                "phrase \"$declaredPhrase\" has $wordCount words — only the last two are used " +
-                    "(lead \"${w.lead}\" + keyword \"${w.keyword}\"); declare a two-word phrase",
+                "'${WakeContract.META_PHRASE}' \"$declaredPhrase\" has $wordCount words — " +
+                    "only the last two are used (lead \"${w.lead}\" + keyword \"${w.keyword}\"); " +
+                    "declare a two-word phrase",
             )
         }
         if (w.lead == null && w.minConf > WakeMatcher.BASELINE_CONF) {
             onProblem(
-                "wake word '${w.keyword}' is strict but declares no lead — it will fire on the bare keyword; " +
-                    "declare a lead (e.g. \"hey ${w.keyword}\")",
+                "wake word '${w.keyword}' is strict ('${WakeContract.META_MIN_CONFIDENCE}' ${w.minConf}) but " +
+                    "declares no lead — it will fire on the bare keyword; declare a lead in " +
+                    "'${WakeContract.META_PHRASE}' (e.g. \"hey ${w.keyword}\")",
             )
         }
     }
