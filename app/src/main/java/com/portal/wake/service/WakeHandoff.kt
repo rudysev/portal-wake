@@ -14,13 +14,9 @@ import com.portal.wake.wake.WakeTarget
  */
 internal class WakeHandoff(private val context: Context, private val arbiter: MicArbiter) {
 
-    /** Hand off wake [id] to its consumer among the discovered [targets]. */
-    fun handOff(targets: List<WakeTarget>, id: String) {
-        val target = targets.firstOrNull { it.word.id == id }
-        if (target == null) {
-            DebugLog.log("wake '$id' has no target (ignored)")
-            return
-        }
+    /** Hand off a fired wake [target] to its consumer. */
+    fun handOff(target: WakeTarget) {
+        val id = target.word.id
         val component = target.component
         when {
             id == ROUTE_ALEXA -> standDownThenWake("alexa → falcon LISTEN") {
