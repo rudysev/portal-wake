@@ -17,15 +17,24 @@ _Avoid_: handler app, extension, integration
 
 **Wake set**:
 The wake words currently in force: those discovered from installed wake plugins, plus a built-in default for
-each word no plugin claims.
+each word no plugin claims. A plugin always wins over a built-in default for the same word. Never empty: "hey
+jarvis" is always in it, from a plugin or as a default.
+In code: `WakeSet`.
 _Avoid_: wake list, registry (the registry discovers the wake set; it is not the set)
+
+**Wake target**:
+A wake word in the wake set, paired with its consumer if it has one. A wake word with no consumer installed is
+still listened for, but hearing it only logs: there is no handoff.
+In code: `WakeTarget`, its consumer a `Consumer` (a wake plugin, or the native Alexa client).
+_Avoid_: route, handler
 
 ## Mic arbitration
 
 **Consumer**:
 Any other app recording from the mic while Portal-Wake has stood down: a wake plugin after a handoff, the native
-Alexa client on the alexa route, or an app that took the mic by itself. A voice call is not a consumer; it is a
-separate reason to stand down.
+Alexa client after a handoff of "hey alexa", or an app that took the mic by itself. A voice call is not a consumer;
+it is a separate reason to stand down.
+In code, a wake target's `Consumer` names the app a handoff goes to; that app becomes the consumer once it records.
 _Avoid_: client, foreigner
 
 **Handoff**:

@@ -18,7 +18,7 @@ import com.portal.wake.system.Falcon
  *
  * Discovery (the extensible path): every app that responds to [WakeContract.ACTION_WAKE] and declares a
  * [WakeContract.META_PHRASE] (plus optional id/min-confidence) meta-data is a wake plugin. We build its
- * wake word ([WakeSpec]) and route matches to its component. Adding "hey X" is therefore a manifest entry
+ * wake word ([WakeSpec]) and a [Consumer.Plugin] naming its receiver. Adding "hey X" is therefore a manifest entry
  * in *that* app — no change here.
  *
  * The Portal's Alexa stack is `com.millennium` (the "Hey Alexa" Vosk detector, on the handset mic) driving
