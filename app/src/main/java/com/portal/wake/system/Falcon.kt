@@ -1,9 +1,10 @@
 package com.portal.wake.system
 
 /**
- * The Portal's native Alexa client app. The built-in "alexa" wake route drives it directly: [WakeRegistry]
- * only advertises "hey alexa" when [PACKAGE] is installed, and [WakeService] hands the mic to it by
- * broadcasting [LISTEN_ACTION]. Single source for these ids so the route can't drift across the two files.
+ * The Portal's native Alexa client app (the `NativeAlexa` consumer). The built-in "alexa" wake target drives it
+ * directly: [WakeRegistry] only advertises "hey alexa" when [PACKAGE] is installed, and [WakeHandoff] hands the
+ * mic to it by broadcasting [LISTEN_ACTION]. Single source for these ids so the two files can't drift
+ * apart on which app the handoff wakes.
  *
  * Distinct from `com.millennium` (the native "Hey Alexa" *detector* that [MicLiberator] suppresses):
  * falcon is the client we keep alive and invoke, never a mic competitor.

@@ -1,15 +1,34 @@
 package com.portal.wake.wake
 
-import android.content.ComponentName
 import com.portal.commons.audio.WakeWord
 
 /**
- * A wake word paired with what to do when it fires.
+ * A **wake target**: a wake word paired with its [consumer], decided once at discovery so the handoff only
+ * carries it out.
  *
- * @param word      the phrase the recognizer listens for.
- * @param component the handler component to broadcast to on a match, or null for a **built-in default**
- *   (no installed handler) — which currently just logs. This is the seam between "recognize" and
- *   "launch": the recognizer never sees the component; the handoff routes by [WakeWord.id].
- * @param source    the handler's package id (for logs), or null for a built-in default.
+ * @param word     the phrase the recognizer listens for.
+ * @param consumer the app woken on a match, or null when none is installed (a match is only logged). The
+ *   recognizer never sees it.
  */
-data class WakeTarget(val word: WakeWord, val component: ComponentName?, val source: String?)
+data class WakeTarget(val word: WakeWord, val consumer: Consumer?)
+
+/**
+ * Who a wake target's match is handed to: a closed set, so the handoff dispatches on it exhaustively.
+ *
+ * Plain strings, not an Android `ComponentName`: JVM unit tests run with default-valued Android stubs, where
+ * component names never compare equal.
+ */
+sealed interface Consumer {
+    /** How discovery's `debug.txt` line names this consumer. */
+    val label: String
+
+    /** A wake plugin's receiver for [WakeContract.ACTION_WAKE], named by package and class. */
+    data class Plugin(val packageName: String, val className: String) : Consumer {
+        override val label: String get() = packageName
+    }
+
+    /** The Portal's native Alexa client (`falcon`), woken by its LISTEN broadcast. */
+    data object NativeAlexa : Consumer {
+        override val label: String = "NativeAlexa"
+    }
+}

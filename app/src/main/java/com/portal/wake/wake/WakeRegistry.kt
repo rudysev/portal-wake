@@ -73,7 +73,7 @@ object WakeRegistry {
         )
         return word?.let {
             warnIfMisdeclared(component, phrase, it)
-            WakeTarget(it, component, info.packageName)
+            WakeTarget(it, Consumer.Plugin(packageName = info.packageName, className = info.name))
         }
     }
 
