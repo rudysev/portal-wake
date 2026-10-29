@@ -288,11 +288,11 @@ class MicArbiterTest {
     @Test
     fun detachThenStart_reSeedsCallState() {
         arbiter.start()
-        arbiter.standDown("wake") // mid-handoff when the wake set empties
+        arbiter.standDown("wake") // mid-handoff when detached
         arbiter.detach() // the service then closes the engine
 
         audio.inCall = true // a call began while detached
-        arbiter.start() // the wake set is non-empty again: engine rebuilt, arbiter started
+        arbiter.start() // reused: started again
         assertFalse(arbiter.isCapturing) // call state re-seeded, not stale
         assertEquals(1, sch.countWithDelay(MicArbiter.STANDDOWN_POLL_MS)) // poll re-armed, exactly once
 

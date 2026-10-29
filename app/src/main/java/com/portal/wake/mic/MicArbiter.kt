@@ -148,8 +148,8 @@ internal class MicArbiter(
     }
 
     /**
-     * Fully reset, so the arbiter is left inert and safe to reuse: [com.portal.wake.service.WakeService]
-     * detaches it when the wake set empties and calls [start] again when it refills. Cancels its own queued
+     * Fully reset, so the arbiter is left inert and safe to reuse; [com.portal.wake.service.WakeService]
+     * detaches it at teardown, and [start] may follow. Cancels its own queued
      * posts ([callPoll]/[reclaimConfirm]) and clears both pause reasons and every coordinator.
      * The Android recording-callback is unregistered by `WakeService` (which owns it); this is the pure half
      * of teardown.

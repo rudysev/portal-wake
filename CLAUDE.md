@@ -8,11 +8,13 @@ No icon/Activity/UI: boots a foreground service, owns the mic, runs on-device **
 on a wake match. minSdk 28 / targetSdk 29 / compileSdk 36. **No GMS.** Deps: `androidx.core`, `com.portal:commons`
 (composite build from sibling `../portal-commons`, in the **portal-apps** workspace with `portal-assistant`).
 
-Routes: **jarvis** → plugin `portal-assistant` (`WakeContract`); **alexa** → native Alexa client `falcon` (`LISTEN` intent).
+Consumers: **jarvis** → plugin `portal-assistant` (`WakeContract`). Any plugin may claim either word; **alexa** →
+native Alexa client `falcon` (`LISTEN` intent) is only the built-in default, present when falcon is installed.
 
 ## Design rules — hard constraints
-- **Extensibility:** wake words come from `WakeRegistry.discover()` — plugin apps (`WakeContract`) first, built-in
-  defaults as fallback. New "hey X" = a plugin app declaring a receiver; the recognizer stays assistant-agnostic.
+- **Extensibility:** wake words come from `WakeRegistry.discover()` → `WakeSet`: plugin apps (`WakeContract`) win
+  over built-in defaults for any id, `alexa` included. New "hey X" = a plugin app declaring a receiver; the
+  recognizer stays assistant-agnostic.
 - **Reclaim by detection only.** After a handoff, reclaim the mic only when the consumer stops recording
   (`HandoffRecovery` fed by `AudioRecordingCallback`), and only while paused. No `WAKE_DONE`, no reclaim timer
   (turns can last minutes).
@@ -43,14 +45,17 @@ Routes: **jarvis** → plugin `portal-assistant` (`WakeContract`); **alexa** →
 
 ## Layout
 - `service/` — Android lifecycle + adapters: `WakeService` (engine lifecycle, `AudioManagerGate`, `HandlerScheduler`,
-  recording callback, `logSilencing`), `WakeHandoff` (match→consumer routing), `WakeNotification`, `BootReceiver`.
+  recording callback, `logSilencing`), `WakeHandoff` (stand down, then wake the target's `Consumer`; holds no
+  wake-id knowledge), `WakeNotification`, `BootReceiver`.
 - `mic/` — runs on the JVM, unit-tested: calls Android only through `Scheduler`/`AudioGate` and the engine only
   through `CaptureController`. Its timing reads the engine's own `const`s (e.g. `WakeMicEngine.SILENCE_WINDOW_MS`,
   inlined at compile time), so it tracks the values the engine uses. `MicArbiter` = state machine: two pause reasons
   (call, handoff), single `reconcile()`. Internal: `HandoffRecovery` (reclaim rule), `MicContentionDetector`.
 - `wake/` — this app's own (not shared): `WakeContract` (plugin contract; meta-data key strings are the wire
-  contract, mirrored by plugins), `WakeSpec`, `WakeRegistry`, `WakeTarget`.
-- `system/` — `MicLiberator` (frees mic slot), `Falcon` (alexa route).
+  contract, mirrored by plugins), `WakeSpec`, `WakeRegistry` (Android reads only: plugin receivers + is falcon
+  installed), `WakeSet` (pure: defaults, plugin-wins, never empty, lookup, refresh `Unchanged`/`Swap`),
+  `WakeTarget` (word + `Consumer?`: sealed `Plugin`/`NativeAlexa`, decided at discovery; null = match only logged).
+- `system/` — `MicLiberator` (frees mic slot), `Falcon` (native Alexa client ids).
 - **portal-commons** (edits change both apps):
   - `com.portal:commons` (pure JVM): `PcmCapture`/`PcmDevice`, `CapturePolicy`, `PcmCaptureFormat`, `DebugLog`,
     `WakeMatcher`, `WakeWord`.
