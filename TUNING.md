@@ -61,7 +61,7 @@ the clean-phrase and cross-keyword gates — not the keyword floor — do the wo
   phone call held near the Portal decoded `[[unk](100) hey(66) jarvis(95)]` — a *short, clean* phrase that
   the clean-phrase and cross-keyword gates above can't catch (it isn't long, and carries no rival keyword).
   What distinguishes it from a real wake is the **"hey" confidence**: 0.66 here, while genuine wakes clear
-  0.70. Fixed by gating the preceding "hey" on `WakeMatcher.LEAD_MIN_CONF` (0.70) for strict routes —
+  0.80. Fixed by gating the preceding "hey" on `WakeMatcher.LEAD_MIN_CONF` (0.80) for strict routes —
   present-but-weak no longer passes. The call audio reached the mic at all because the call stand-down reads the
   *Portal's* audio mode and so is blind to a call on a *separate phone*; the matcher floor is the backstop.
 
@@ -108,12 +108,15 @@ All in `WakeMatcher` / per-`WakeWord`:
   **`hey`/`hay` only**). A lead with no entry matches itself only. Kept tight: `a`, `hi`, and `he` were
   dropped from `hey` — too-common lead-ins (filler / mis-decodes) that widened false fires. Add a variant
   back only if the logs show a real wake lost because the lead was misheard.
-- **`WakeMatcher.LEAD_MIN_CONF`** (0.70) — the confidence the preceding lead must clear on a **strict**
+- **`WakeMatcher.LEAD_MIN_CONF`** (0.80) — the confidence the preceding lead must clear on a **strict**
   route. It blocks a clean short phrase with an under-confident "hey" (observed: 0.66 from phone-call audio
-  over a speaker). Lenient routes ignore it (present-only). It was 0.80, but "hey" is short and 10–25 dB
-  quieter than "jarvis" on the Portal mic, so a genuine wake often decodes it at 0.7x; replaying 419 recorded
-  wakes through the wake detector, 0.70 plus the lead-only grammar took recall from 70% to 78%, for 1 extra
-  fire in 1,000 hard negatives. Don't drop below the observed FP (0.66).
+  over a speaker). Lenient routes ignore it (present-only). It was briefly 0.70: "hey" is short and 10–25 dB
+  quieter than "jarvis" on the Portal mic, so a genuine wake can decode it at 0.7x, and 0.70 plus the lead-only
+  grammar took recall on 419 replayed wakes from 70% to 78%. But dropping the bare "jarvis" from the grammar
+  also raised the confidence of a *spurious* "hey": room audio just before a bare "jarvis" decoded as
+  `hey(71) jarvis(99)` and fired. Replayed 100 times, that clip fired 7–11 times at 0.70 and never at 0.80
+  (nor at 0.70 with the old grammar), so the floor went back to 0.80 and the lead-only grammar stayed. Recall at
+  0.80 with the lead-only grammar isn't measured yet. Don't drop below the observed FPs (0.66, 0.71).
 - **`WakeMatcher.UNK_TOKEN`** (`[unk]`) — Vosk's "unknown" escape token. On a **strict** route, **any**
   `[unk]` in the decode is contamination and rejects the fire outright (a genuine close-mic wake never
   decodes one). This is a binary gate, not a tunable threshold — it's the strongest precision lever for a
