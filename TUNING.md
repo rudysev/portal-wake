@@ -123,6 +123,15 @@ All in `WakeMatcher` / per-`WakeWord`:
   background-audio FP and catches what no confidence floor can (the observed FP scored `hey(99) jarvis(99)`).
   The only recall cost is a wake Vosk pads with an `[unk]` (e.g. a noisy lead-in), which the logs show is
   rare; if one is lost, it surfaces as a `near-miss [...] rejected: contaminated ('[unk]' in decode)` line.
+- **`WakeMatcher.DECOYS`** — words that sound like a keyword ("jarvis": travis, davis, harvest, service, …),
+  added to the grammar so ordinary speech has a closer match than the keyword. Without them the decoder forced
+  speech like "this is" or "his job" onto `jarvis` at up to 1.00 confidence: 10 near-misses on the Portal in ~20
+  minutes of a talk playing nearby, each a stray "hey" away from a false wake. With them the same talk decoded
+  **no** `jarvis` (the speech came out as `davis`, `service`, `travis`, …), and 6 of 6 "hey jarvis" takes from
+  across a quiet room still fired (hey ≥ 0.94). On a strict route a decoy in the decode is contamination, like
+  `[unk]`. Keep common short words out: the decoder fits them to the lead-in of a real wake (`the hey jarvis`),
+  which lost every recorded wake offline. A wake lost to a decoy shows as a near-miss with the decoy in it
+  (`[jarvis(44) travis(98)]`); a far or noisy "jarvis" heard as a decoy is the recall risk to watch.
 
 Workflow: run on device, read `debug.txt`, and adjust these — every change is covered by
 `WakeMatcherTest`, so re-run the unit tests after editing.
