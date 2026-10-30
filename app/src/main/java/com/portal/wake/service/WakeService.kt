@@ -1,5 +1,6 @@
 package com.portal.wake.service
 
+import android.Manifest
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -101,6 +102,17 @@ class WakeService :
         }
     }
 
+    /**
+     * `scripts/wake-clips.sh mark` (portal-apps): someone said the wake phrase and it didn't fire, so save the last
+     * minute of audio as a miss ([WakeMicEngine.markMiss]). Registered only with [clips] on, and only for senders
+     * holding `DUMP`, which `adb shell` has and an installed app can't get.
+     */
+    private val missReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent?) {
+            if (::engine.isInitialized) engine.markMiss()
+        }
+    }
+
     /** Debounced wake-set refresh; coalesces the 2–3 broadcasts of a single reinstall into one. */
     private val wakeSetRefresh = Runnable { applyWakeSetChange() }
 
@@ -145,6 +157,7 @@ class WakeService :
         runCatching { audioManager.unregisterAudioRecordingCallback(recordingCallback) }
         arbiter.detach()
         runCatching { unregisterReceiver(packageReceiver) }
+        if (clips != null) runCatching { unregisterReceiver(missReceiver) }
         if (::engine.isInitialized) engine.close()
         clips?.close()
         // NB: deliberately do NOT DebugLog.close() here. DebugLog is a process-wide singleton shared with
@@ -190,6 +203,17 @@ class WakeService :
                 audit = clips,
             ),
         )
+        if (clips != null) {
+            val filter = IntentFilter(ACTION_MARK_MISS)
+            ContextCompat.registerReceiver(
+                this,
+                missReceiver,
+                filter,
+                Manifest.permission.DUMP,
+                main,
+                ContextCompat.RECEIVER_EXPORTED,
+            )
+        }
         arbiter.start()
     }
 
@@ -251,6 +275,9 @@ class WakeService :
         // Under the app's external files dir, beside debug.txt. Not the old `clips/`: that holds the openWakeWord-era
         // clips, which would count against these caps.
         private const val CLIPS_DIR = "wake-clips"
+
+        /** Mark a missed wake (debug builds; senders need `DUMP`, i.e. adb). See [missReceiver]. */
+        const val ACTION_MARK_MISS = "com.portal.wake.action.MARK_MISS"
 
         /**
          * Start (or no-op if already running) the always-on wake service.
