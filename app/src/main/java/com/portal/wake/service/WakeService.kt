@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ApplicationInfo
 import android.media.AudioManager
 import android.media.AudioRecordingConfiguration
 import android.os.Build
@@ -14,6 +15,7 @@ import android.os.Looper
 import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import com.portal.commons.DebugLog
+import com.portal.commons.audio.WakeClipRecorder
 import com.portal.commons.audio.WakeEvent
 import com.portal.commons.audio.WakeMicConfig
 import com.portal.commons.audio.WakeMicEngine
@@ -79,6 +81,15 @@ class WakeService :
     private var started = false
 
     /**
+     * The audio behind every wake and near-miss, written to `files/wake-clips/` (see [WakeClipRecorder]), so a false
+     * wake can be heard and labelled (`scripts/wake-clips.sh` in portal-apps): its decode alone can't be told from a
+     * real one. **Debug builds only**: it records whatever is said near the device, so a release build can't start
+     * recording the household by accident, while an evaluation build (`assembleDebug` + `setup.sh`) needs no extra
+     * step. Which way it resolved is logged. Set in startListening(), before the engine that uses it.
+     */
+    private var clips: WakeClipRecorder? = null
+
+    /**
      * Re-discover when wake plugins are installed/removed. A single reinstall delivers 2–3 broadcasts
      * (REMOVED+ADDED+REPLACED), so we *debounce* into one refresh ([scheduleWakeSetRefresh]); the refresh
      * itself ([applyWakeSetChange]) leaves the grammar alone when the wake words are unchanged.
@@ -135,6 +146,7 @@ class WakeService :
         arbiter.detach()
         runCatching { unregisterReceiver(packageReceiver) }
         if (::engine.isInitialized) engine.close()
+        clips?.close()
         // NB: deliberately do NOT DebugLog.close() here. DebugLog is a process-wide singleton shared with
         // BootReceiver and the next service instance; its file path never changes, so onCreate's re-set is a
         // no-op (one reused writer for the process's life, not a per-restart leak). Closing on a per-service
@@ -162,6 +174,7 @@ class WakeService :
      */
     private fun startListening() {
         wakeSet = WakeRegistry.discover(this)
+        clips = newClipRecorder()
         engine = WakeMicEngine(
             context = applicationContext,
             config = WakeMicConfig(
@@ -174,9 +187,21 @@ class WakeService :
                 // On main; the engine logs the cause and never delivers one after close().
                 onCaptureLost = arbiter::onCaptureLost,
                 beforeMicAcquire = { MicLiberator.freeMic(applicationContext) },
+                audit = clips,
             ),
         )
         arbiter.start()
+    }
+
+    /** A recorder for [clips] on a debuggable build; null (logged) on a release build. */
+    private fun newClipRecorder(): WakeClipRecorder? {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) {
+            DebugLog.log("wake clips: off (release build)")
+            return null
+        }
+        val dir = File(getExternalFilesDir(null), CLIPS_DIR)
+        DebugLog.log("wake clips → ${dir.absolutePath} (cap ${WakeClipRecorder.DEFAULT_CAP_PER_KIND}/kind)")
+        return WakeClipRecorder(dir)
     }
 
     /**
@@ -222,6 +247,10 @@ class WakeService :
         // A single app reinstall delivers 2–3 package broadcasts (REMOVED+ADDED+REPLACED). Coalesce them into
         // one wake-set refresh so we don't re-discover 2–3× per update.
         private const val WAKE_SET_REFRESH_DEBOUNCE_MS = 1_000L
+
+        // Under the app's external files dir, beside debug.txt. Not the old `clips/`: that holds the openWakeWord-era
+        // clips, which would count against these caps.
+        private const val CLIPS_DIR = "wake-clips"
 
         /**
          * Start (or no-op if already running) the always-on wake service.
