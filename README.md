@@ -144,7 +144,9 @@ the Portal when more than one device is attached.
 
 ### The evidence and how to read it
 
-Everything lives under `/sdcard/Android/data/com.portal.wake/files/hybrid/`:
+Everything lives in the app's internal storage, `/data/data/com.portal.wake/files/hybrid/`, which other apps can't
+read (`debug.txt` stays in `/sdcard/Android/data/com.portal.wake/files/`). adb reaches it only through `run-as`, so
+pulling it needs the debug build `setup.sh` installs:
 
 - `evidence.jsonl`: one JSON object per line, each with `type`, `at` (ISO-8601 UTC) and `atMs`; rotated to `.1` at
   20 MB.
@@ -162,7 +164,7 @@ Everything lives under `/sdcard/Android/data/com.portal.wake/files/hybrid/`:
 Pull and summarise:
 
 ```bash
-scripts/hybrid-evidence.sh pull ~/portal-evidence/day1   # copies hybrid/ and debug.txt, then prints the summary
+scripts/hybrid-evidence.sh pull ~/portal-evidence/day1   # copies hybrid/ (via run-as) and debug.txt, then the summary
 scripts/hybrid-evidence.sh summary ~/portal-evidence/day1
 ```
 
@@ -171,7 +173,8 @@ marks, and lists every wake, disagreement and mark with its clip. To judge a day
 is a false wake (the bar is about 3 or fewer per 24 h); every `vosk-only` disagreement and every `marked miss` is
 worth a listen, since that is where the hybrid may have missed a real "Hey Jarvis".
 
-The audio is the household's: it stays on the device and in whatever directory you pull it to.
+The audio is the household's: it stays in the app's private storage on the device, out of other apps' reach, and in
+whatever directory you pull it to.
 
 The openWakeWord models are CC BY-NC-SA 4.0 (non-commercial) and sherpa-onnx is Apache-2.0; `fetch-hybrid-deps.sh`
 downloads them, nothing third-party is committed.

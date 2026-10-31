@@ -14,7 +14,8 @@ import java.io.File
 
 /**
  * What `WakeService` needs for the hybrid wake detector: the [settings] that pick the detector, the [evidence] log
- * (`files/hybrid/`, beside debug.txt), the engine's [config], and the adb-only controls. Built once listening starts.
+ * (internal `files/hybrid/`, which other apps can't read), the engine's [config], and the adb-only controls. Built
+ * once listening starts.
  *
  * The controls are a receiver registered only for senders holding `DUMP`, which `adb shell` has and an installed app
  * can't get: [ACTION_SET_DETECTOR] switches the detector (`--es detector hybrid|vosk`, `--ez shadow true|false`) and
@@ -31,7 +32,7 @@ class HybridSetup(private val context: Context, handler: Handler, private val ma
      */
     val evidence: EvidenceRecorder = run {
         val debuggable = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-        val dir = File(context.getExternalFilesDir(null), EVIDENCE_DIR)
+        val dir = File(context.filesDir, EVIDENCE_DIR)
         DebugLog.log("detector: ${settings.choice}; evidence → $dir (audio clips ${if (debuggable) "on" else "off"})")
         EvidenceRecorder(dir, keepAudio = debuggable).also {
             it.note("session", System.currentTimeMillis(), mapOf("detector" to settings.choice.toString()))

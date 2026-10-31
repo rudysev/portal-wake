@@ -4,8 +4,8 @@
 #   scripts/hybrid-evidence.sh detector hybrid|vosk   switch the detector now (persists across reboots)
 #   scripts/hybrid-evidence.sh shadow on|off          run the Vosk shadow beside the hybrid, or not
 #   scripts/hybrid-evidence.sh mark                   someone said "Hey Jarvis" and nothing woke: save the last 30 s
-#   scripts/hybrid-evidence.sh pull [dir]             copy evidence.jsonl, the clips and debug.txt to dir
-#                                                     (default ./hybrid-evidence-<UTC time>)
+#   scripts/hybrid-evidence.sh pull [dir]             copy evidence.jsonl, the clips (via run-as, debug build only)
+#                                                     and debug.txt to dir (default ./hybrid-evidence-<UTC time>)
 #   scripts/hybrid-evidence.sh summary <dir|file>     count candidates, wakes and disagreements in a pulled log
 #
 # Pick the Portal with ANDROID_SERIAL when more than one device is attached. `summary` needs jq.
@@ -52,7 +52,7 @@ summary() {
         "Vosk wakes:  decided \($v | count(.role == "decided")), shadow \($v | count(.role == "shadow"))",
         "disagree:    Vosk shadow only \($d | count(.kind == "vosk-only")), hybrid only \($d | count(.kind == "hybrid-only"))",
         "marked miss: \(count(.type == "miss_mark"))",
-        "cost:        Vosk \($s | map(.voskMsMean) | add / ([length, 1] | max) | floor) ms, gate \($s | map(.gateMsMean) | add / ([length, 1] | max) | floor) ms per frame (mean of minutes); dropped frames \($s | map(.droppedFrames) | add // 0)",
+        "cost:        Vosk \($s | map(.voskMsMean) | (add // 0) / ([length, 1] | max) | floor) ms, gate \($s | map(.gateMsMean) | (add // 0) / ([length, 1] | max) | floor) ms per frame (mean of minutes); dropped frames \($s | map(.droppedFrames) | add // 0)",
         "",
         "wakes and disagreements (UTC):",
         (.[] | select((.type == "candidate" and .woke) or .type == "disagreement" or .type == "miss_mark")
@@ -81,10 +81,12 @@ case "${1:-}" in
   pull)
     dir=${2:-"hybrid-evidence-$(date -u +%Y%m%dT%H%M%SZ)"}
     mkdir -p "$dir"
-    "${ADB[@]}" pull "$FILES/hybrid" "$dir/"
+    if ! "${ADB[@]}" exec-out run-as "$PKG" tar -cf - -C files hybrid | tar -xf - -C "$dir"; then
+      echo "could not copy files/hybrid (run-as needs the debug build)" >&2
+    fi
     "${ADB[@]}" pull "$FILES/debug.txt" "$dir/" || true
     echo "pulled to $dir"
-    if command -v jq >/dev/null 2>&1; then
+    if command -v jq >/dev/null 2>&1 && [[ -f "$dir/hybrid/evidence.jsonl" ]]; then
       summary "$dir"
     fi
     ;;
