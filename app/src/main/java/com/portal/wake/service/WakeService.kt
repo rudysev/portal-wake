@@ -18,6 +18,8 @@ import com.portal.commons.audio.WakeEvent
 import com.portal.commons.audio.WakeMicConfig
 import com.portal.commons.audio.WakeMicEngine
 import com.portal.commons.audio.WakeModel
+import com.portal.wake.hybrid.DetectorSettings
+import com.portal.wake.hybrid.HybridSetup
 import com.portal.wake.mic.MicArbiter
 import com.portal.wake.system.Falcon
 import com.portal.wake.system.MicLiberator
@@ -37,6 +39,10 @@ import java.io.File
  *  - **discover** the [WakeSet] at runtime via [WakeRegistry] and build the recognizer from its words;
  *  - **hand off** a match: look up its wake target and let [WakeHandoff] wake the consumer decided at
  *    discovery (a wake plugin via [WakeContract.ACTION_WAKE], or the native Alexa client via its LISTEN intent).
+ *
+ * **Which detector decides** is [DetectorSettings]: the hybrid wake detector (openWakeWord gate, then sherpa-onnx
+ * and the Vosk window check, with the Vosk shadow beside it) or Vosk alone, switched over adb at runtime; the
+ * settings, the evidence log and the adb controls live in [HybridSetup].
  *
  * The "should we be holding the mic right now" decision flow — handoff recovery, foreign-mic contention,
  * phone/VoIP call stand-down, and the single reconcile rule that starts/pauses capture — now lives in
@@ -77,6 +83,9 @@ class WakeService :
     private lateinit var engine: WakeMicEngine
     private lateinit var wakeSet: WakeSet
     private var started = false
+
+    // Set in startListening(), before the engine that uses it.
+    private var hybrid: HybridSetup? = null
 
     /**
      * Re-discover when wake plugins are installed/removed. A single reinstall delivers 2–3 broadcasts
@@ -135,6 +144,7 @@ class WakeService :
         arbiter.detach()
         runCatching { unregisterReceiver(packageReceiver) }
         if (::engine.isInitialized) engine.close()
+        hybrid?.close()
         // NB: deliberately do NOT DebugLog.close() here. DebugLog is a process-wide singleton shared with
         // BootReceiver and the next service instance; its file path never changes, so onCreate's re-set is a
         // no-op (one reused writer for the process's life, not a per-restart leak). Closing on a per-service
@@ -162,6 +172,8 @@ class WakeService :
      */
     private fun startListening() {
         wakeSet = WakeRegistry.discover(this)
+        val hybridSetup = HybridSetup(this, main) { if (::engine.isInitialized) engine.markMiss() }
+        hybrid = hybridSetup
         engine = WakeMicEngine(
             context = applicationContext,
             config = WakeMicConfig(
@@ -174,6 +186,7 @@ class WakeService :
                 // On main; the engine logs the cause and never delivers one after close().
                 onCaptureLost = arbiter::onCaptureLost,
                 beforeMicAcquire = { MicLiberator.freeMic(applicationContext) },
+                hybrid = hybridSetup.config(),
             ),
         )
         arbiter.start()

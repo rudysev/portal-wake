@@ -50,3 +50,7 @@ build/
 /app/src/main/assets/model-en-us/*
 !/app/src/main/assets/model-en-us/README.md
 .cursorrules
+# The hybrid wake detector's fetched dependencies (./fetch-hybrid-deps.sh): the sherpa-onnx AAR and the models.
+/app/libs/
+/app/src/main/assets/hybrid/oww/
+/app/src/main/assets/hybrid/kws/

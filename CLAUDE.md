@@ -4,9 +4,11 @@ Full picture: `README.md`. Use the domain terms in `GLOSSARY.md` (handoff, stand
 
 ## What this is
 Headless always-on wake-word listener for Meta Portal+ ("aloha", Android 9 / API 28), package `com.portal.wake`.
-No icon/Activity/UI: boots a foreground service, owns the mic, runs on-device **Vosk**, hands the mic to another app
-on a wake match. minSdk 28 / targetSdk 29 / compileSdk 36. **No GMS.** Deps: `androidx.core`, `com.portal:commons`
-(composite build from sibling `../portal-commons`, in the **portal-apps** workspace with `portal-assistant`).
+No icon/Activity/UI: boots a foreground service, owns the mic, runs on-device **Vosk** (by default in this build the
+**hybrid wake detector**, openWakeWord + sherpa-onnx + Vosk; README "Hybrid wake detector"), hands the mic to another
+app on a wake match. minSdk 28 / targetSdk 29 / compileSdk 36. **No GMS.** Deps: `androidx.core`, `com.portal:commons`
+(composite build from sibling `../portal-commons`, in the **portal-apps** workspace with `portal-assistant`),
+`onnxruntime-android`, and the sherpa-onnx AAR that `./fetch-hybrid-deps.sh` downloads.
 
 Consumers: **jarvis** → plugin `portal-assistant` (`WakeContract`). Any plugin may claim either word; **alexa** →
 native Alexa client `falcon` (`LISTEN` intent) is only the built-in default, present when falcon is installed.
@@ -69,6 +71,7 @@ native Alexa client `falcon` (`LISTEN` intent) is only the built-in default, pre
 ```bash
 git submodule update --init --recursive   # from portal-apps workspace
 # bundle a Vosk model: app/src/main/assets/model-en-us/README.md; SDK via ANDROID_HOME or local.properties; JDK 17/21
+./fetch-hybrid-deps.sh   # sherpa-onnx AAR (needed to build) + the hybrid's models (needed to run it)
 ./gradlew check          # unit tests + Android Lint + detekt + ktlint; formatKotlin fixes style
 ./gradlew assembleDebug
 ./setup.sh               # install + grant mic + start headless + free mic slot

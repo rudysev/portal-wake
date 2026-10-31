@@ -8,6 +8,8 @@ core = "1.13.1"
 annotation = "1.6.0"
 junit = "4.13.2"
 json = "20240303"
+# The ONNX Runtime the hybrid's openWakeWord gate was measured on (off-device and on the Portal+).
+onnxruntime = "1.19.2"
 
 # 3.19's kotlin-bom 2.4.0 sets the build's kotlin-daemon-client to at least 2.4.0, so KGP (`kotlin`) must stay
 # >= 2.4.0 or the Kotlin daemon fails (NoSuchMethodError).
@@ -23,6 +25,7 @@ androidx-core = { group = "androidx.core", name = "core", version.ref = "core" }
 androidx-annotation = { group = "androidx.annotation", name = "annotation", version.ref = "annotation" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 json = { group = "org.json", name = "json", version.ref = "json" }
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -35,6 +35,9 @@ android {
     // Dependency-freshness checks query Maven/Google at lint time, so the result changes whenever upstream ships a
     // release, not when this code changes. Dependency updates are deliberate (Renovate/Dependabot are out of scope).
     disable += setOf("AndroidGradlePluginVersion", "GradleDependency", "NewerVersionAvailable")
+    // 16 KB page alignment matters from Android 15 on; Portals run Android 9 and 10 (4 KB pages). onnxruntime-android
+    // stays on 1.19.2, the version the hybrid's gate was measured on, whose arm64 library is 4 KB aligned.
+    disable += "Aligned16KB"
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
@@ -42,9 +45,21 @@ android {
   }
   // Prebuilt dependency .so files, packaged as they are: stripping needs an NDK, which nothing here installs, and
   // without one AGP warns on every native-lib merge. libvosk ships stripped already; JNA's libjnidispatch keeps its
-  // symbols (~130 KB per ABI).
+  // symbols (~130 KB per ABI), as do the hybrid's ONNX Runtime and sherpa-onnx libraries. The x86 libraries are dropped
+  // before the merge, which otherwise fails on two x86 libonnxruntime.so files (only sherpa-onnx's x86 build links
+  // ONNX Runtime dynamically); every Portal is ARM.
   packaging {
-    jniLibs { keepDebugSymbols += setOf("**/libvosk.so", "**/libjnidispatch.so") }
+    jniLibs {
+      excludes += setOf("lib/x86/**", "lib/x86_64/**")
+      keepDebugSymbols +=
+        setOf(
+          "**/libvosk.so",
+          "**/libjnidispatch.so",
+          "**/libsherpa-onnx-jni.so",
+          "**/libonnxruntime.so",
+          "**/libonnxruntime4j_jni.so",
+        )
+    }
   }
   testOptions {
     // Use the bundled org.json (testRuntimeOnly) instead of android.jar's throwing stubs, so the
@@ -62,6 +77,15 @@ kotlin {
 // rather than waiting for lintVital, which only runs on assembleRelease (checkReleaseBuilds) and nothing builds that.
 tasks.check { dependsOn("lintRelease") }
 
+// The sherpa-onnx AAR comes from ../fetch-hybrid-deps.sh; fail early and say so when it is missing. (The models are
+// optional: without them the hybrid is unavailable at runtime and Vosk alone decides.)
+val sherpaAar: File = file("libs/sherpa-onnx-static-link-onnxruntime-2.0.1.aar")
+val checkHybridDeps = tasks.register("checkHybridDeps") {
+  val aar = sherpaAar
+  doFirst { check(aar.isFile) { "Missing $aar: run ./fetch-hybrid-deps.sh first" } }
+}
+tasks.named("preBuild") { dependsOn(checkHybridDeps) }
+
 dependencies {
   // NotificationCompat/ContextCompat and @RequiresApi; the app uses none of core-ktx's Kotlin extensions.
   implementation(libs.androidx.core)
@@ -70,6 +94,11 @@ dependencies {
   implementation(libs.portal.commons)
   // Shared Android shells (AudioRecordPcmDevice); composite-build substituted from ./commons-android.
   implementation(libs.portal.commons.android)
+  // The hybrid wake detector's openWakeWord gate (the ai.onnxruntime API).
+  implementation(libs.onnxruntime.android)
+  // The hybrid's keyword spotter: sherpa-onnx with ONNX Runtime linked statically into libsherpa-onnx-jni.so (no
+  // second libonnxruntime.so to clash with onnxruntime-android's). Not on Maven Central: ../fetch-hybrid-deps.sh.
+  implementation(files(sherpaAar))
 
   testImplementation(libs.junit)
   // Real org.json at test runtime only: the code under test calls it, the tests never reference it.
