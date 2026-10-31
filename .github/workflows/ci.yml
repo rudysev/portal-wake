@@ -45,6 +45,8 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v6
+      # The hybrid wake detector's sherpa-onnx AAR is not on Maven Central; the build needs it, not the models.
+      - run: ./fetch-hybrid-deps.sh --libs
       - run: ./gradlew buildHealth
 
   build:
@@ -67,6 +69,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v6
+      - run: ./fetch-hybrid-deps.sh --libs
       - name: Check (unit tests, Android Lint, detekt, ktlint) and build
         if: github.event_name == 'pull_request'
         run: ./gradlew check assembleDebug

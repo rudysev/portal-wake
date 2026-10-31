@@ -5,7 +5,7 @@ Read before changing lint/detekt/ktlint config, git hooks, CI workflows, or depe
 ## Android Lint
 - Runs in `check` on debug + release, `warningsAsErrors` + `abortOnError`. No `lint-baseline.xml`.
 - Disabled (network-dependent, fail on upstream releases): `AndroidGradlePluginVersion`, `GradleDependency`,
-  `NewerVersionAvailable`.
+  `NewerVersionAvailable`. Also `Aligned16KB` (Portals run Android 9/10 on 4 KB pages; `app/build.gradle.kts`).
 - Report: `app/build/reports/lint-results-debug.html`.
 
 ## detekt
@@ -41,6 +41,7 @@ Read before changing lint/detekt/ktlint config, git hooks, CI workflows, or depe
 
 - Branch protection requires `shellcheck`, `build-health`, `build` — **keep those job names**.
 - Checks out `portal-wake` + `portal-commons@main` side by side so `includeBuild("../portal-commons")` resolves.
+- `build` and `build-health` first run `./fetch-hybrid-deps.sh --libs`: the sherpa-onnx AAR isn't on Maven Central.
 - `shellcheck` job lints every tracked script (`provisioning/` end-user installer, `setup.sh`, `scripts/`, hooks);
   not part of `./gradlew check`. `.shellcheckrc` follows sourced files (`config.env`, `keyprov.sh`) relative to
   each script, so cross-file variables aren't flagged unused.
