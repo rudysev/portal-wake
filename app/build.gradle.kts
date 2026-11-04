@@ -17,8 +17,8 @@ android {
     // Sideloaded onto Portal (no Play Store), so Play's target-API floor doesn't apply; 29 is deliberate.
     //noinspection ExpiredTargetSdkVersion
     targetSdk = 29 // Android 10 — Portal-era behavior; background-started FG mic still allowed
-    versionCode = 5
-    versionName = "2.3"
+    versionCode = 6
+    versionName = "2.4"
   }
 
   buildTypes {
